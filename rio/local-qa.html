@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Q&A</title>
+    <link rel="stylesheet" href="./local-qa.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel">
+        <h1>Document invoer</h1>
+
+        <form id="document-form" novalidate>
+          <label>
+            Titel
+            <input id="title" name="title" type="text" placeholder="Documenttitel" required />
+          </label>
+
+          <label>
+            Inhoud
+            <textarea id="content" name="content" rows="6" placeholder="Plak hier het document of een citaat..." required></textarea>
+          </label>
+
+          <label>
+            Herkomst
+            <input id="origin" name="origin" type="text" placeholder="Bijv. Intern rapport, externe bron, ..." required />
+          </label>
+
+          <label>
+            Status
+            <select id="status" name="status">
+              <option value="draft">draft</option>
+              <option value="historisch">historisch</option>
+              <option value="specificatie">specificatie</option>
+            </select>
+          </label>
+
+          <div class="actions">
+            <button type="submit">Document opslaan</button>
+            <button type="button" id="reset-document" class="secondary">Reset</button>
+          </div>
+        </form>
+
+        <p class="error" data-error-box aria-live="polite"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Citaat</h2>
+        <ul data-quote-list class="quote-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="./local-qa-ui.mjs"></script>
+  </body>
+</html>

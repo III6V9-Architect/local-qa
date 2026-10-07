@@ -1,0 +1,13 @@
+{
+  "name": "local-qa",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test rio/local-qa.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
