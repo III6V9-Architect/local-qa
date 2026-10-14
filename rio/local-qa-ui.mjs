@@ -3,7 +3,6 @@ import {
   USER_DISCLAIMER,
   createDocument,
   createQuote,
-  resetDocumentMetadata,
 } from './local-qa.mjs';
 
 const state = {
@@ -80,9 +79,11 @@ function attachEvents() {
           status,
         });
 
+        const quote = createQuote(documentState, documentState.content);
         state.currentDocument = documentState;
-        const quote = createQuote(documentState, documentState.content || title || 'Geen citaat beschikbaar.');
         state.quotes = [quote];
+        const errorBox = document.querySelector('[data-error-box]');
+        if (errorBox) errorBox.textContent = '';
         renderQuoteList();
         updateFormState(documentState);
       } catch (error) {
@@ -123,5 +124,5 @@ export {
   USER_DISCLAIMER,
   createDocument,
   createQuote,
-  resetDocumentMetadata,
 };
+

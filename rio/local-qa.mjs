@@ -21,6 +21,10 @@ export function validateStatus(status) {
 }
 
 export function createDocument({ documentId, title, content, origin, status = 'draft' }) {
+  const normalizedTitle = String(title ?? '').trim();
+  const normalizedContent = String(content ?? '').trim();
+  if (!normalizedTitle) throw new Error('Documenttitel is vereist.');
+  if (!normalizedContent) throw new Error('Documentinhoud is vereist.');
   const source = {
     origin: normalizeOrigin(origin),
     status: validateStatus(status),
@@ -30,8 +34,8 @@ export function createDocument({ documentId, title, content, origin, status = 'd
 
   return {
     documentId: documentId ?? `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    title: String(title ?? '').trim(),
-    content: String(content ?? '').trim(),
+    title: normalizedTitle,
+    content: normalizedContent,
     source,
   };
 }
@@ -67,8 +71,6 @@ export function resetDocumentMetadata(documentState) {
 
   documentState.title = '';
   documentState.content = '';
-  documentState.origin = '';
-  documentState.status = 'draft';
   documentState.source = {
     origin: 'ONBEKEND',
     status: 'draft',
@@ -78,3 +80,4 @@ export function resetDocumentMetadata(documentState) {
 
   return documentState;
 }
+

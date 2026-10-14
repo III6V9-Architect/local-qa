@@ -79,3 +79,33 @@ test('reset wist metadata', () => {
 test('status enum is exact', () => {
   assert.deepEqual(STATUS_VALUES, ['draft', 'historisch', 'specificatie']);
 });
+
+test('document title and content are required after trimming', () => {
+  for (const value of ['', '   ', null, undefined]) {
+    assert.throws(() => createDocument({ title: value, content: 'tekst' }), /Documenttitel is vereist/);
+    assert.throws(() => createDocument({ title: 'Titel', content: value }), /Documentinhoud is vereist/);
+  }
+});
+
+test('all statuses preserve the user disclaimer and unverified metadata', () => {
+  for (const status of STATUS_VALUES) {
+    const doc = createDocument({ title: ' Titel ', content: ' tekst ', origin: '', status: ` ${status.toUpperCase()} ` });
+    const quote = createQuote(doc, doc.content);
+    assert.equal(doc.title, 'Titel');
+    assert.equal(quote.quote, 'tekst');
+    assert.equal(quote.source.status, status);
+    assert.equal(quote.source.origin, 'ONBEKEND');
+    assert.equal(quote.source.verified, false);
+    assert.equal(quote.source.statusProvidedBy, 'USER');
+    assert.equal(quote.label, USER_DISCLAIMER);
+  }
+});
+
+test('reset preserves the document schema', () => {
+  const doc = createDocument({ title: 'Titel', content: 'tekst' });
+  const keys = Object.keys(doc).sort();
+  resetDocumentMetadata(doc);
+  assert.deepEqual(Object.keys(doc).sort(), keys);
+  assert.equal(resetDocumentMetadata(null), null);
+});
+
