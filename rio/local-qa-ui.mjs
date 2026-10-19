@@ -6,6 +6,7 @@ import {
 } from './local-qa.mjs';
 import { parseTextFile, validateTextFile } from './text-file.mjs';
 import { formatCitation, formatPassageReport } from './citation-export.mjs';
+import { createDraftStore, recoverDraft } from './draft-store.mjs';
 import { searchPassages, highlightParts } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
@@ -24,6 +25,37 @@ let currentSearchOptions = { status: '', match: 'any' };
 let savedFormFingerprint = '';
 let lastDeleted = null;
 let unloadGuardAttached = false;
+let draftStore;
+let pendingDraft = null;
+let draftBlocked = false;
+let suspendDraftWrites = true;
+
+function persistDraft() {
+  if (suspendDraftWrites || pendingDraft || draftBlocked) return;
+  const message = document.querySelector('[data-draft-status]');
+  try {
+    if (!draftStore) throw new Error('Opslag niet beschikbaar');
+    if (hasUnsavedChanges()) {
+      const fields = Object.fromEntries(['title', 'content', 'origin', 'status'].map((id) => [id, document.getElementById(id).value]));
+      draftStore.save({ version: 1, base: state.currentDocument, fields });
+      message.textContent = 'Concept tijdelijk bewaard in dit tabblad.';
+    } else {
+      draftStore.clear();
+      message.textContent = '';
+    }
+  } catch {
+    message.textContent = 'Concept kon niet tijdelijk worden bewaard. Sla je document op of kopieer de tekst voordat je herlaadt.';
+  }
+}
+
+function showDraftRecovery() {
+  document.querySelector('[data-draft-recovery]').hidden = !pendingDraft && !draftBlocked;
+  document.querySelector('#restore-draft').disabled = !pendingDraft;
+  document.querySelector('[data-recovery-message]').textContent = draftBlocked
+    ? 'Het bewaarde concept is beschadigd of niet beschikbaar. Het is niet overschreven. Verwerp het om nieuwe concepten te bewaren.'
+    : 'Er is een niet-opgeslagen concept van dit tabblad. Herstel of verwerp het; tot die keuze blijft het bewaarde concept behouden.';
+}
+
 
 function formFingerprint() {
   return JSON.stringify(['title', 'content', 'origin', 'status'].map((id) => document.getElementById(id).value));
@@ -35,6 +67,7 @@ function hasUnsavedChanges() {
 
 function beforeUnload(event) {
   if (!hasUnsavedChanges()) return;
+  persistDraft();
   event.preventDefault();
   event.returnValue = '';
 }
@@ -45,6 +78,7 @@ function updateDirtyState() {
   if (dirty && !unloadGuardAttached) window.addEventListener('beforeunload', beforeUnload);
   if (!dirty && unloadGuardAttached) window.removeEventListener('beforeunload', beforeUnload);
   unloadGuardAttached = dirty;
+  persistDraft();
 }
 
 function confirmDiscard() {
@@ -271,6 +305,38 @@ function updateFormState(documentState, markSaved = true) {
 }
 
 function attachEvents() {
+  document.querySelector('#restore-draft').addEventListener('click', () => {
+    if (!pendingDraft || !confirmDiscard()) return;
+    const recovered = recoverDraft(pendingDraft, state.documents);
+    suspendDraftWrites = true;
+    state.currentDocument = recovered.document;
+    state.quotes = recovered.document ? [createQuote(recovered.document, recovered.document.content)] : [];
+    updateFormState(recovered.document);
+    updateFormState({ ...recovered.fields, source: recovered.fields }, false);
+    pendingDraft = null;
+    suspendDraftWrites = false;
+    updateDirtyState();
+    renderQuoteList();
+    renderDocumentList();
+    showDraftRecovery();
+    showError();
+    document.querySelector('[data-save-status]').textContent = recovered.conflict
+      ? 'Concept hersteld als nieuw document omdat de oorspronkelijke bron is gewijzigd of verwijderd.'
+      : 'Concept hersteld. Controleer je invoer en sla het document op.';
+    document.querySelector('#title').focus();
+  });
+  document.querySelector('#discard-draft').addEventListener('click', () => {
+    try {
+      if (!draftStore) draftStore = createDraftStore(window.sessionStorage);
+      draftStore.clear();
+      pendingDraft = null;
+      draftBlocked = false;
+      showDraftRecovery();
+      persistDraft();
+    } catch {
+      document.querySelector('[data-draft-status]').textContent = 'Het bewaarde concept kon niet worden verwijderd. Je huidige invoer is behouden.';
+    }
+  });
   document.querySelector('#export-passages').addEventListener('click', () => {
     const message = document.querySelector('[data-passage-export-status]');
     try {
@@ -463,6 +529,14 @@ if (typeof document !== 'undefined') {
   renderDocumentList();
   renderQuoteList();
   updateFormState(null);
+  try {
+    draftStore = createDraftStore(window.sessionStorage);
+    pendingDraft = draftStore.load();
+  } catch {
+    draftBlocked = true;
+  }
+  suspendDraftWrites = false;
+  showDraftRecovery();
 }
 
 export {

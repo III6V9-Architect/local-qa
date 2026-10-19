@@ -20,6 +20,13 @@
         <p data-file-status role="status"></p>
         <p data-file-error class="error" role="alert"></p>
 
+        <div data-draft-recovery hidden>
+          <p data-recovery-message role="status"></p>
+          <div class="actions">
+            <button id="restore-draft" type="button">Concept herstellen</button>
+            <button id="discard-draft" type="button" class="secondary">Bewaard concept verwerpen</button>
+          </div>
+        </div>
         <form id="document-form" novalidate>
           <label>
             Titel
@@ -54,6 +61,7 @@
         <p class="error" data-error-box aria-live="polite"></p>
         <p data-save-status role="status"></p>
         <p data-dirty-status role="status"></p>
+        <p data-draft-status role="status"></p>
       </section>
 
       <section class="panel">
