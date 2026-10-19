@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 test.describe('local qa metadata flow', () => {
   test('invoer -> citaat -> label zichtbaar', async ({ page }) => {
@@ -283,7 +284,7 @@ test('question results refresh on edit, import and delete', async ({ page }) => 
   await expect(page.locator('[data-question-status]')).toContainText('Geen passende passages');
   await uploadBackup(page, { version: 1, documents: [{ ...backupDoc('qa-new', 'Nieuw water'), content: 'Water keert terug.' }] });
   await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
-  await page.locator('[data-testid="passage-card"]').getByRole('button').click();
+  await page.locator('[data-testid="passage-card"]').getByRole('button', { name: 'Open brondocument' }).click();
   await page.click('#delete-document');
   await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
 });
@@ -502,4 +503,91 @@ test('edits made while a file is being read still require discard confirmation',
   await page.evaluate(() => window.finishFileRead());
   await expect(page.locator('[data-file-status]')).toContainText('geannuleerd');
   await expect(page.locator('#content')).toHaveValue('Getypt tijdens lezen');
+});
+
+async function prepareCitationSearch(page) {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [
+    { ...backupDoc('citation-a', 'Waterbron', 'historisch'), content: 'Inleiding.\n\nWater is niet geverifieerd.' },
+    { ...backupDoc('citation-b', 'Tweede bron'), content: 'Water in tweede bron.' },
+  ] });
+  await expect(page.locator('[data-backup-status]')).toContainText('2 toegevoegd');
+  await page.fill('#question', 'Wat staat er over water?');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(2);
+}
+
+test('copy includes the exact citation and provenance', async ({ page }) => {
+  await prepareCitationSearch(page);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
+    configurable: true, value: { writeText: async (text) => { window.copiedCitation = text; } },
+  }));
+  const card = page.locator('[data-testid="passage-card"]').first();
+  await card.getByRole('button', { name: 'Kopieer citaat met bron' }).click();
+  await expect(card.getByRole('status')).toHaveText('Citaat met bronvermelding gekopieerd.');
+  const copied = await page.evaluate(() => window.copiedCitation);
+  expect(copied).toContain('Document: Waterbron');
+  expect(copied).toContain('Document-ID: citation-a');
+  expect(copied).toContain('Alinea: 2');
+  expect(copied).toContain('Herkomst: Archief');
+  expect(copied).toContain('Status: historisch');
+  expect(copied).toContain('gebruikersopgave — niet geverifieerd');
+  expect(copied).toContain('Citaat:\nWater is niet geverifieerd.');
+});
+
+test('blocked clipboard exposes a selected read-only citation for manual copying', async ({ page }) => {
+  await prepareCitationSearch(page);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
+    configurable: true, value: { writeText: async () => { throw new Error('Permission denied'); } },
+  }));
+  const card = page.locator('[data-testid="passage-card"]').first();
+  await card.getByRole('button', { name: 'Kopieer citaat met bron' }).click();
+  await expect(card.getByRole('status')).toContainText('Kopieer de geselecteerde tekst');
+  const fallback = card.getByRole('textbox', { name: 'Citaat met bronvermelding handmatig kopiëren' });
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toBeFocused();
+  expect(await fallback.evaluate((element) => element.readOnly)).toBe(true);
+  const selected = await fallback.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd));
+  expect(selected).toBe(await fallback.inputValue());
+  expect(selected).toContain('gebruikersopgave — niet geverifieerd');
+  expect(selected).toContain('Water is niet geverifieerd.');
+  await expect(card.getByRole('button', { name: 'Kopieer citaat met bron' })).toBeEnabled();
+});
+
+test('download contains the submitted question and every current source', async ({ page }) => {
+  await prepareCitationSearch(page);
+  await page.fill('#document-search', 'geen zichtbare documenten');
+  const pending = page.waitForEvent('download');
+  await page.click('#export-passages');
+  const download = await pending;
+  expect(download.suggestedFilename()).toBe('local-qa-passages.txt');
+  const text = await readFile(await download.path(), 'utf8');
+  expect(text).toContain('Vraag: Wat staat er over water?');
+  expect(text).toContain('Aantal passages: 2');
+  expect(text).toContain('Document-ID: citation-a');
+  expect(text).toContain('Document-ID: citation-b');
+  expect(text.split('gebruikersopgave — niet geverifieerd')).toHaveLength(3);
+  expect(text).toContain('Water is niet geverifieerd.');
+  expect(text).toContain('Water in tweede bron.');
+  await page.fill('#question', 'nieuwe vraag');
+  await expect(page.locator('#export-passages')).toBeDisabled();
+});
+
+test('export refreshes after saved edits and disables when sources disappear', async ({ page }) => {
+  await prepareCitationSearch(page);
+  await page.getByRole('button', { name: 'Waterbron', exact: true }).click();
+  await page.fill('#content', 'Water is gewijzigd.');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.getByRole('button', { name: 'Tweede bron', exact: true }).click();
+  await page.click('#delete-document');
+  const pending = page.waitForEvent('download');
+  await page.click('#export-passages');
+  const text = await readFile(await (await pending).path(), 'utf8');
+  expect(text).toContain('Aantal passages: 1');
+  expect(text).toContain('Water is gewijzigd.');
+  expect(text).not.toContain('Document-ID: citation-b');
+  expect(text).not.toContain('Water is niet geverifieerd.');
+  await page.getByRole('button', { name: 'Waterbron', exact: true }).click();
+  await page.click('#delete-document');
+  await expect(page.locator('#export-passages')).toBeDisabled();
 });

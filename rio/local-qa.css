@@ -162,3 +162,6 @@ input[type="file"] { max-width: 100%; }
 .question-panel { grid-column: 1 / -1; }
 [data-passage-list] blockquote { white-space: pre-wrap; max-height: 20rem; overflow: auto; overflow-wrap: anywhere; margin-bottom: 1rem; }
 [data-passage-list] h3 { margin-top: 0; }
+
+[data-passage-list] .actions { flex-wrap: wrap; }
+[data-passage-list] textarea { width: 100%; }
