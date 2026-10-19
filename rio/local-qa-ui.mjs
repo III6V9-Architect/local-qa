@@ -5,6 +5,7 @@ import {
   createQuote,
 } from './local-qa.mjs';
 import { parseTextFile, validateTextFile } from './text-file.mjs';
+import { formatCitation, formatPassageReport } from './citation-export.mjs';
 import { searchPassages } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
@@ -18,6 +19,7 @@ const state = {
 let store;
 let storageError = '';
 let lastQuestion = '';
+let currentPassages = [];
 let savedFormFingerprint = '';
 let lastDeleted = null;
 let unloadGuardAttached = false;
@@ -107,6 +109,9 @@ function renderDocumentList() {
 function renderPassages() {
   const list = document.querySelector('[data-passage-list]');
   const message = document.querySelector('[data-question-status]');
+  currentPassages = [];
+  document.querySelector('#export-passages').disabled = true;
+  document.querySelector('[data-passage-export-status]').textContent = '';
   list.replaceChildren();
   if (!lastQuestion) {
     message.textContent = 'Stel een vraag om passages in alle opgeslagen documenten te zoeken.';
@@ -115,6 +120,8 @@ function renderPassages() {
   try {
     if (storageError) throw new Error(storageError);
     const results = searchPassages(state.documents, lastQuestion);
+    currentPassages = results;
+    document.querySelector('#export-passages').disabled = !results.length;
     message.textContent = results.length
       ? `${results.length} passende passages (maximaal 5). Controleer de bron en context.`
       : 'Geen passende passages gevonden. Probeer andere zoekwoorden.';
@@ -140,12 +147,55 @@ function renderPassages() {
           document.querySelector('#title').focus();
         }
       });
-      item.append(title, metadata, matched, quote, open);
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'secondary';
+      copy.textContent = 'Kopieer citaat met bron';
+      const copyStatus = document.createElement('p');
+      copyStatus.setAttribute('role', 'status');
+      const fallback = document.createElement('textarea');
+      fallback.readOnly = true;
+      fallback.hidden = true;
+      fallback.rows = 10;
+      fallback.setAttribute('aria-label', 'Citaat met bronvermelding handmatig kopiëren');
+      copy.addEventListener('click', async () => {
+        const text = formatCitation(result);
+        copy.disabled = true;
+        copyStatus.textContent = '';
+        try {
+          await navigator.clipboard.writeText(text);
+          fallback.hidden = true;
+          copyStatus.textContent = 'Citaat met bronvermelding gekopieerd.';
+        } catch {
+          copyStatus.textContent = 'Automatisch kopiëren is niet beschikbaar. Kopieer de geselecteerde tekst hieronder.';
+          fallback.value = text;
+          fallback.hidden = false;
+          fallback.focus();
+          fallback.select();
+        } finally {
+          copy.disabled = false;
+        }
+      });
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      actions.append(open, copy);
+      item.append(title, metadata, matched, quote, actions, copyStatus, fallback);
       list.appendChild(item);
     }
   } catch (error) {
     message.textContent = error.message;
   }
+}
+
+function downloadText(text, filename, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function persist(documents) {
@@ -208,6 +258,16 @@ function updateFormState(documentState, markSaved = true) {
 }
 
 function attachEvents() {
+  document.querySelector('#export-passages').addEventListener('click', () => {
+    const message = document.querySelector('[data-passage-export-status]');
+    try {
+      const text = formatPassageReport(lastQuestion, currentPassages);
+      downloadText(text, 'local-qa-passages.txt', 'text/plain;charset=utf-8');
+      message.textContent = 'Vraag en passages met bronvermelding gedownload.';
+    } catch (error) {
+      message.textContent = error.message;
+    }
+  });
   const textInput = document.querySelector('#open-text-file');
   textInput.addEventListener('change', async () => {
     const file = textInput.files[0];
@@ -258,15 +318,7 @@ function attachEvents() {
     backupError.textContent = '';
     try {
       if (storageError) throw new Error(storageError);
-      const blob = new Blob([exportDocuments(state.documents)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'local-qa-backup.json';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadText(exportDocuments(state.documents), 'local-qa-backup.json', 'application/json');
       backupStatus.textContent = 'Back-up van alle opgeslagen documenten gedownload.';
     } catch (error) {
       backupError.textContent = error.message;

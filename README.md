@@ -97,3 +97,17 @@ Unsaved edits require discard confirmation. Invalid UTF-8, binary control
 characters, blank content, unsupported extensions, oversized files, and read
 failures leave the current editor and saved collection unchanged. PDF and Word
 extraction are not supported. Reopening a file and saving creates another document.
+
+## Copy and download citations
+
+Each question result has a copy button that includes the literal passage, source
+title, document ID, paragraph number, origin, status, and unverified-user
+disclaimer. If clipboard access is unavailable, the app selects the same text
+in a read-only field for manual copying.
+
+Download vraag en passages exports the submitted question and all currently
+shown results as UTF-8 plain text. It describes the output as keyword retrieval,
+not an independently verified answer. Editing the question clears the results
+and disables export until a new search finds passages. Saving, importing,
+deleting, or undoing deletion refreshes the downloadable results. Exports use
+saved content; unsaved editor changes are excluded.
