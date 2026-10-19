@@ -120,6 +120,7 @@ test('multiple documents survive reload, support edits and persistent deletion',
   await expect(page.locator('.quote-disclaimer')).toHaveText('gebruikersopgave — niet geverifieerd');
   await page.fill('#content', 'A gewijzigd');
   await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('blockquote')).toHaveText('A gewijzigd');
   await expect(page.locator('[data-document-list] button')).toHaveCount(2);
   await page.reload();
   await page.getByRole('button', { name: 'Document A', exact: true }).click();
@@ -148,6 +149,7 @@ test('quota failure preserves the previous quote and editable input', async ({ p
   await page.goto('/rio/local-qa.html');
   await fillDocument(page);
   await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
   await page.fill('#content', 'Niet opgeslagen');
   await page.locator('#document-form button[type="submit"]').click();
@@ -244,6 +246,7 @@ test('invalid and conflicting imports leave storage and editor unchanged', async
 
 test('failed import write does not claim success or render imported documents', async ({ page }) => {
   await page.goto('/rio/local-qa.html');
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
   await uploadBackup(page, { version: 1, documents: [backupDoc('a')] });
   await expect(page.locator('[data-backup-error]')).toContainText('Niet opgeslagen');
@@ -372,6 +375,7 @@ test('undo storage failure keeps recovery available and can be retried', async (
   await fillDocument(page);
   await page.locator('#document-form button[type="submit"]').click();
   await page.click('#delete-document');
+  await expect(page.locator('[data-save-status]')).toHaveText('Document verwijderd.');
   await page.evaluate(() => {
     window.originalSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); };
@@ -397,12 +401,15 @@ test('undo rejects changes from another tab and unload guard only protects dirty
   await fillDocument(page);
   expect(await unloadCancelled()).toBe(true);
   await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   expect(await unloadCancelled()).toBe(false);
   await page.click('#delete-document');
+  await expect(page.locator('[data-save-status]')).toHaveText('Document verwijderd.');
   const other = await context.newPage();
   await other.goto('/rio/local-qa.html');
   await fillDocument(other, 'Wijziging uit tweede tab');
   await other.locator('#document-form button[type="submit"]').click();
+  await expect(other.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   await page.click('#undo-delete');
   await expect(page.locator('[data-error-box]')).toContainText('ander tabblad');
   await expect(page.locator('#undo-delete')).toBeVisible();
