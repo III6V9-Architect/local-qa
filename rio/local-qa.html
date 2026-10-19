@@ -46,6 +46,7 @@
 
         <p class="error" data-error-box aria-live="polite"></p>
         <p data-save-status role="status"></p>
+        <p data-dirty-status role="status"></p>
       </section>
 
       <section class="panel">
@@ -74,6 +75,8 @@
         <p data-library-empty>Nog geen opgeslagen documenten.</p>
         <ul data-document-list class="document-list" aria-label="Opgeslagen documenten"></ul>
         <button type="button" id="delete-document" class="secondary" disabled>Geselecteerd document verwijderen</button>
+        <p data-undo-status role="status"></p>
+        <button id="undo-delete" type="button" class="secondary" hidden>Laatste verwijdering ongedaan maken</button>
         <h2>Citaat</h2>
         <ul data-quote-list class="quote-list"></ul>
       </section>
