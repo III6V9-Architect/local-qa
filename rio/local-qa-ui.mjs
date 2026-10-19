@@ -6,7 +6,7 @@ import {
 } from './local-qa.mjs';
 import { searchPassages } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
-import { filterDocuments, exportDocuments, importDocuments, MAX_IMPORT_BYTES } from './document-library.mjs';
+import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
 
 const state = {
   documents: [],
@@ -17,8 +17,50 @@ const state = {
 let store;
 let storageError = '';
 let lastQuestion = '';
+let savedFormFingerprint = '';
+let lastDeleted = null;
+let unloadGuardAttached = false;
+
+function formFingerprint() {
+  return JSON.stringify(['title', 'content', 'origin', 'status'].map((id) => document.getElementById(id).value));
+}
+
+function hasUnsavedChanges() {
+  return formFingerprint() !== savedFormFingerprint;
+}
+
+function beforeUnload(event) {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+function updateDirtyState() {
+  const dirty = hasUnsavedChanges();
+  document.querySelector('[data-dirty-status]').textContent = dirty ? 'Niet-opgeslagen wijzigingen' : '';
+  if (dirty && !unloadGuardAttached) window.addEventListener('beforeunload', beforeUnload);
+  if (!dirty && unloadGuardAttached) window.removeEventListener('beforeunload', beforeUnload);
+  unloadGuardAttached = dirty;
+}
+
+function confirmDiscard() {
+  return !hasUnsavedChanges() || window.confirm('Je hebt niet-opgeslagen wijzigingen. Wil je deze verwerpen?');
+}
+
+function resetEditor() {
+  state.currentDocument = null;
+  state.quotes = [];
+  updateFormState(null);
+  renderQuoteList();
+  renderDocumentList();
+  showError();
+  document.querySelector('[data-save-status]').textContent = '';
+}
+
 
 function openDocument(doc) {
+  if (doc.documentId === state.currentDocument?.documentId) return true;
+  if (!confirmDiscard()) return false;
   document.querySelector('[data-save-status]').textContent = '';
   state.currentDocument = doc;
   state.quotes = [createQuote(doc, doc.content)];
@@ -26,6 +68,7 @@ function openDocument(doc) {
   renderQuoteList();
   renderDocumentList();
   showError();
+  return true;
 }
 
 
@@ -88,8 +131,7 @@ function renderPassages() {
       open.textContent = 'Open brondocument';
       open.addEventListener('click', () => {
         const doc = state.documents.find((doc) => doc.documentId === result.documentId);
-        if (doc) {
-          openDocument(doc);
+        if (doc && openDocument(doc)) {
           document.querySelector('#title').focus();
         }
       });
@@ -156,6 +198,8 @@ function updateFormState(documentState) {
   document.querySelector('#content').value = documentState?.content ?? '';
   originField.value = documentState?.source?.origin ?? '';
   statusField.value = documentState?.source?.status ?? 'draft';
+  savedFormFingerprint = formFingerprint();
+  updateDirtyState();
 }
 
 function attachEvents() {
@@ -170,6 +214,8 @@ function attachEvents() {
   });
   const form = document.querySelector('#document-form');
   const resetButton = document.querySelector('#reset-document');
+  form.addEventListener('input', updateDirtyState);
+  form.addEventListener('change', updateDirtyState);
   document.querySelector('#document-search').addEventListener('input', renderDocumentList);
   document.querySelector('#document-filter').addEventListener('change', renderDocumentList);
   const backupStatus = document.querySelector('[data-backup-status]');
@@ -261,36 +307,45 @@ function attachEvents() {
   }
 
   document.querySelector('#delete-document').addEventListener('click', () => {
-    if (!state.currentDocument) return;
+    if (!state.currentDocument || !confirmDiscard()) return;
+    document.querySelector('[data-save-status]').textContent = '';
     try {
+      const deleted = { document: state.currentDocument, index: state.documents.findIndex((doc) => doc.documentId === state.currentDocument.documentId) };
       const documents = state.documents.filter((doc) => doc.documentId !== state.currentDocument.documentId);
       persist(documents);
       state.documents = documents;
+      lastDeleted = deleted;
+      document.querySelector('#undo-delete').hidden = false;
+      document.querySelector('[data-undo-status]').textContent = `“${deleted.document.title}” verwijderd. Terugzetten kan tot de volgende verwijdering of herladen.`;
       renderPassages();
-      resetButton.click();
+      resetEditor();
       document.querySelector('[data-save-status]').textContent = 'Document verwijderd.';
     } catch (error) {
       showError(error);
     }
   });
 
-  if (resetButton) {
-    resetButton.addEventListener('click', () => {
-      const form = document.querySelector('#document-form');
-      if (form) form.reset();
-      state.currentDocument = null;
-      state.quotes = [];
-      renderQuoteList();
-      updateFormState(null);
+  document.querySelector('#undo-delete').addEventListener('click', () => {
+    if (!lastDeleted) return;
+    document.querySelector('[data-save-status]').textContent = '';
+    try {
+      const documents = restoreDocument(state.documents, lastDeleted.document, lastDeleted.index);
+      persist(documents);
+      state.documents = documents;
+      lastDeleted = null;
+      document.querySelector('#undo-delete').hidden = true;
+      document.querySelector('[data-undo-status]').textContent = 'Document teruggezet. Je huidige invoer is behouden.';
       renderDocumentList();
-      document.querySelector('[data-save-status]').textContent = '';
+      renderPassages();
+      showError();
+    } catch (error) {
+      showError(error);
+    }
+  });
 
-      const errorBox = document.querySelector('[data-error-box]');
-      if (errorBox) {
-        errorBox.textContent = '';
-      }
-    });
-  }
+  resetButton.addEventListener('click', () => {
+    if (confirmDiscard()) resetEditor();
+  });
 }
 
 if (typeof document !== 'undefined') {

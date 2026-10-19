@@ -84,6 +84,7 @@ test('reset clears fields, quote and error, then permits a fresh save', async ({
   await page.fill('#content', '');
   await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).not.toBeEmpty();
+  page.once('dialog', (dialog) => dialog.accept());
   await page.click('#reset-document');
   for (const field of ['title', 'content', 'origin']) {
     await expect(page.locator(`#${field}`)).toHaveValue('');
@@ -302,4 +303,109 @@ test('question has clear empty states and safely renders imported markup', async
   await expect(card.locator('img')).toHaveCount(0);
   await page.fill('#question', 'zand');
   await expect(card).toHaveCount(0);
+});
+
+test('switch and reset ask before discarding edits; same-document selection preserves them', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Document A'), backupDoc('b', 'Document B')] });
+  await expect(page.locator('[data-backup-status]')).toContainText('2 toegevoegd');
+  await page.getByRole('button', { name: 'Document A', exact: true }).click();
+  await page.fill('#content', 'Concept blijft');
+  await expect(page.locator('[data-dirty-status]')).toHaveText('Niet-opgeslagen wijzigingen');
+  await page.getByRole('button', { name: 'Document A', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('Concept blijft');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: 'Document B', exact: true }).click();
+  await expect(page.locator('#title')).toHaveValue('Document A');
+  await expect(page.locator('#content')).toHaveValue('Concept blijft');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.click('#reset-document');
+  await expect(page.locator('#content')).toHaveValue('Concept blijft');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Document B', exact: true }).click();
+  await expect(page.locator('#title')).toHaveValue('Document B');
+  await expect(page.locator('[data-dirty-status]')).toBeEmpty();
+});
+
+test('source opening protects unsaved new-document input', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Bron')] });
+  await expect(page.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  await page.fill('#question', 'archief');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await page.fill('#title', 'Nieuw concept');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: 'Open brondocument' }).click();
+  await expect(page.locator('#title')).toHaveValue('Nieuw concept');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Open brondocument' }).click();
+  await expect(page.locator('#title')).toHaveValue('Bron');
+});
+
+test('delete cancellation and undo preserve the current draft and restore search results', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Water in bron');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.fill('#question', 'water');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await page.fill('#content', 'Niet opgeslagen wijziging');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.click('#delete-document');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.click('#delete-document');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+  await page.fill('#title', 'Nieuw concept');
+  await page.click('#undo-delete');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await expect(page.locator('#title')).toHaveValue('Nieuw concept');
+  await expect(page.locator('#undo-delete')).toBeHidden();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await page.getByRole('button', { name: 'Document', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('Water in bron');
+});
+
+test('undo storage failure keeps recovery available and can be retried', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.click('#delete-document');
+  await page.evaluate(() => {
+    window.originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); };
+  });
+  await page.click('#undo-delete');
+  await expect(page.locator('[data-error-box]')).toContainText('Niet opgeslagen');
+  await expect(page.locator('#undo-delete')).toBeVisible();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+  await page.evaluate(() => { Storage.prototype.setItem = window.originalSetItem; });
+  await page.click('#undo-delete');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  await expect(page.locator('[data-error-box]')).toBeEmpty();
+});
+
+test('undo rejects changes from another tab and unload guard only protects dirty input', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  const unloadCancelled = () => page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(await unloadCancelled()).toBe(false);
+  await fillDocument(page);
+  expect(await unloadCancelled()).toBe(true);
+  await page.locator('#document-form button[type="submit"]').click();
+  expect(await unloadCancelled()).toBe(false);
+  await page.click('#delete-document');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await fillDocument(other, 'Wijziging uit tweede tab');
+  await other.locator('#document-form button[type="submit"]').click();
+  await page.click('#undo-delete');
+  await expect(page.locator('[data-error-box]')).toContainText('ander tabblad');
+  await expect(page.locator('#undo-delete')).toBeVisible();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+  await other.reload();
+  await expect(other.locator('[data-document-list] button')).toHaveCount(1);
 });

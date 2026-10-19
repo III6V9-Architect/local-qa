@@ -70,3 +70,16 @@ words are ignored. Negations are retained. Paragraphs rank by the number of
 distinct matching query words, with collection order breaking ties. Results may
 match only part of a question; matched words are displayed for inspection.
 No query, document text, or result is sent to an external model or service.
+
+## Editing and undo
+
+The editor marks unsaved changes. Switching to another document, opening a
+different source, resetting, or deleting with unsaved edits asks before discarding
+them. Selecting the current document preserves its editor. Reload/leave uses the
+browser's standard unsaved-changes warning where supported; save to retain edits.
+
+The last successfully deleted document can be restored during the current page
+session, until another successful deletion or reload. Undo restores the saved
+version at its previous position and preserves the current editor, including
+unsaved text. A same-ID conflict or failed storage write keeps undo available and
+leaves the collection unchanged. Undo is not a persistent recycle bin.

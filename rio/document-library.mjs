@@ -38,3 +38,16 @@ export function importDocuments(current, text) {
   }
   return { documents, added, skipped };
 }
+
+export function restoreDocument(documents, deleted, index) {
+  const existing = documents.find((doc) => doc.documentId === deleted.documentId);
+  if (existing) {
+    if (JSON.stringify(existing) !== JSON.stringify(deleted)) {
+      throw new Error('Terugzetten geweigerd: er bestaat al een andere versie met hetzelfde document-ID.');
+    }
+    return [...documents];
+  }
+  const restored = [...documents];
+  restored.splice(Math.min(Math.max(index, 0), restored.length), 0, deleted);
+  return restored;
+}
