@@ -677,6 +677,7 @@ test('new incomplete draft can be recovered after reload and cleared by save', a
   await expect(page.locator('[data-dirty-status]')).toContainText('Niet-opgeslagen');
   await page.fill('#title', 'Hersteld document');
   await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   await page.reload();
   await expect(page.locator('[data-draft-recovery]')).toBeHidden();
   await page.getByRole('button', { name: 'Hersteld document', exact: true }).click();
@@ -708,6 +709,7 @@ test('draft recovery makes a copy if another tab changed the original', async ({
   await other.getByRole('button', { name: 'Document', exact: true }).click();
   await other.fill('#content', 'Nieuwere bron');
   await other.locator('#document-form button[type="submit"]').click();
+  await expect(other.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   page.once('dialog', (dialog) => dialog.accept());
   await page.reload();
   await page.click('#restore-draft');
@@ -763,4 +765,61 @@ test('session storage write failure leaves the editor usable', async ({ page }) 
   await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-document-list] button')).toHaveCount(1);
   await expect(page.locator('[data-dirty-status]')).toBeEmpty();
+});
+
+test('another tab holding the write lock preserves the draft and permits retry', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Te bewaren concept');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await other.evaluate(() => new Promise((ready) => {
+    window.heldLock = navigator.locks.request('local-qa.documents.v1.write', () => new Promise((release) => {
+      window.releaseWriteLock = release;
+      ready();
+    }));
+  }));
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-error-box]')).toContainText('ander tabblad slaat nu op');
+  await expect(page.locator('#content')).toBeEnabled();
+  await expect(page.locator('#content')).toHaveValue('Te bewaren concept');
+  expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('local-qa.editor-draft.v1'))).toContain('Te bewaren concept');
+  await other.evaluate(async () => { window.releaseWriteLock(); await window.heldLock; });
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await expect(page.locator('[data-error-box]')).toBeEmpty();
+});
+
+test('controls stay disabled until the asynchronous write commits', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.evaluate(() => {
+    const request = navigator.locks.request.bind(navigator.locks);
+    navigator.locks.request = (name, options, callback) => request(name, options, async (lock) => {
+      await new Promise((resolve) => { window.finishWrite = resolve; });
+      return callback(lock);
+    });
+  });
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('#app-controls')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#content')).toBeDisabled();
+  await expect(page.locator('#reset-document')).toBeDisabled();
+  await expect(page.locator('[data-save-status]')).toBeEmpty();
+  await page.waitForFunction(() => typeof window.finishWrite === 'function');
+  await page.evaluate(() => window.finishWrite());
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await expect(page.locator('#content')).toBeEnabled();
+  await expect(page.locator('#app-controls')).toHaveAttribute('aria-busy', 'false');
+});
+
+test('missing Web Locks fails safely without losing editor input', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'locks', { value: undefined }));
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-error-box]')).toContainText('Web Locks');
+  await expect(page.locator('#content')).toBeEnabled();
+  await expect(page.locator('#content')).toHaveValue('Eerste inhoud');
+  await expect(page.locator('[data-save-status]')).toBeEmpty();
+  expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBeNull();
 });
