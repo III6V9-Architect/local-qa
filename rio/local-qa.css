@@ -153,3 +153,8 @@ blockquote {
 button:disabled { opacity: .5; cursor: default; }
 button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 #delete-document { margin-bottom: 1.5rem; }
+
+.backup-actions { flex-wrap: wrap; align-items: start; }
+.panel { min-width: 0; }
+.panel > label { margin-bottom: .75rem; }
+input[type="file"] { max-width: 100%; }

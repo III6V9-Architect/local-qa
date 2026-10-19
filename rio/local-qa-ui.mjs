@@ -5,6 +5,7 @@ import {
   createQuote,
 } from './local-qa.mjs';
 import { createDocumentStore } from './document-store.mjs';
+import { filterDocuments, exportDocuments, importDocuments, MAX_IMPORT_BYTES } from './document-library.mjs';
 
 const state = {
   documents: [],
@@ -22,7 +23,11 @@ function showError(error = '') {
 function renderDocumentList() {
   const list = document.querySelector('[data-document-list]');
   list.replaceChildren();
-  for (const doc of state.documents) {
+  const visible = filterDocuments(state.documents,
+    document.querySelector('#document-search').value,
+    document.querySelector('#document-filter').value);
+  document.querySelector('[data-result-count]').textContent = `${visible.length} van ${state.documents.length} documenten`;
+  for (const doc of visible) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
@@ -40,7 +45,9 @@ function renderDocumentList() {
     item.appendChild(button);
     list.appendChild(item);
   }
-  document.querySelector('[data-library-empty]').hidden = state.documents.length > 0;
+  const empty = document.querySelector('[data-library-empty]');
+  empty.hidden = visible.length > 0;
+  empty.textContent = state.documents.length ? 'Geen documenten gevonden.' : 'Nog geen opgeslagen documenten.';
   document.querySelector('#delete-document').disabled = !state.currentDocument;
 }
 
@@ -104,6 +111,51 @@ function updateFormState(documentState) {
 function attachEvents() {
   const form = document.querySelector('#document-form');
   const resetButton = document.querySelector('#reset-document');
+  document.querySelector('#document-search').addEventListener('input', renderDocumentList);
+  document.querySelector('#document-filter').addEventListener('change', renderDocumentList);
+  const backupStatus = document.querySelector('[data-backup-status]');
+  const backupError = document.querySelector('[data-backup-error]');
+  document.querySelector('#export-documents').addEventListener('click', () => {
+    backupStatus.textContent = '';
+    backupError.textContent = '';
+    try {
+      if (storageError) throw new Error(storageError);
+      const blob = new Blob([exportDocuments(state.documents)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'local-qa-backup.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      backupStatus.textContent = 'Back-up van alle opgeslagen documenten gedownload.';
+    } catch (error) {
+      backupError.textContent = error.message;
+    }
+  });
+  const importInput = document.querySelector('#import-documents');
+  importInput.addEventListener('change', async () => {
+    const file = importInput.files[0];
+    if (!file) return;
+    importInput.disabled = true;
+    backupStatus.textContent = '';
+    backupError.textContent = '';
+    try {
+      if (file.size > MAX_IMPORT_BYTES) throw new Error('Het bestand is te groot. Maximaal 5 MB.');
+      const text = await file.text();
+      const result = importDocuments(state.documents, text);
+      persist(result.documents);
+      state.documents = result.documents;
+      renderDocumentList();
+      backupStatus.textContent = `${result.added} toegevoegd, ${result.skipped} overgeslagen.`;
+    } catch (error) {
+      backupError.textContent = error.message;
+    } finally {
+      importInput.disabled = false;
+      importInput.value = '';
+    }
+  });
 
   if (form) {
     form.addEventListener('submit', (event) => {

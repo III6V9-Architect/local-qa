@@ -167,3 +167,84 @@ test('another tab cannot silently overwrite newer documents', async ({ page, con
   await other.reload();
   await expect(other.locator('[data-document-list] button')).toHaveCount(1);
 });
+
+async function uploadBackup(page, data) {
+  await page.locator('#import-documents').setInputFiles({
+    name: 'backup.json', mimeType: 'application/json',
+    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data)),
+  });
+}
+
+const backupDoc = (id, title = 'Import', status = 'draft') => ({
+  documentId: id, title, content: 'Tekst uit archief',
+  source: { origin: 'Archief', status, verified: true, statusProvidedBy: 'SYSTEM' },
+});
+
+test('search and status filter combine without changing selected quote', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Plan', 'historisch'), backupDoc('b', 'Rapport')] });
+  await expect(page.locator('[data-backup-status]')).toHaveText('2 toegevoegd, 0 overgeslagen.');
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.fill('#document-search', ' ARCHIEF ');
+  await page.selectOption('#document-filter', 'draft');
+  await expect(page.locator('[data-document-list] button')).toHaveText(['Rapport']);
+  await expect(page.locator('[data-result-count]')).toHaveText('1 van 2 documenten');
+  await expect(page.locator('#title')).toHaveValue('Plan');
+  await expect(page.locator('.quote-meta')).toHaveText('Archief · historisch');
+  await page.fill('#document-search', 'geen resultaat');
+  await expect(page.locator('[data-library-empty]')).toHaveText('Geen documenten gevonden.');
+  await page.fill('#document-search', '');
+  await page.selectOption('#document-filter', '');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+});
+
+test('download includes hidden documents and can restore them in a fresh browser', async ({ page, browser }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Plan'), backupDoc('b', 'Historie', 'historisch')] });
+  await expect(page.locator('[data-backup-status]')).toContainText('2 toegevoegd');
+  await page.fill('#document-search', 'Plan');
+  const downloadPromise = page.waitForEvent('download');
+  await page.click('#export-documents');
+  const download = await downloadPromise;
+  const path = await download.path();
+  const context = await browser.newContext();
+  try {
+    const other = await context.newPage();
+    await other.goto('http://127.0.0.1:4173/rio/local-qa.html');
+    await other.locator('#import-documents').setInputFiles(path);
+    await expect(other.locator('[data-backup-status]')).toHaveText('2 toegevoegd, 0 overgeslagen.');
+    await other.reload();
+    await other.getByRole('button', { name: 'Historie', exact: true }).click();
+    await expect(other.locator('.quote-meta')).toHaveText('Archief · historisch');
+    await expect(other.locator('.quote-disclaimer')).toHaveText('gebruikersopgave — niet geverifieerd');
+    await other.locator('#import-documents').setInputFiles(path);
+    await expect(other.locator('[data-backup-status]')).toHaveText('0 toegevoegd, 2 overgeslagen.');
+  } finally {
+    await context.close();
+  }
+});
+
+test('invalid and conflicting imports leave storage and editor unchanged', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Bestaand')] });
+  await expect(page.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  await page.getByRole('button', { name: 'Bestaand', exact: true }).click();
+  await page.fill('#content', 'Nog niet opgeslagen');
+  const before = await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'));
+  await uploadBackup(page, '{');
+  await expect(page.locator('[data-backup-error]')).toContainText('geldige JSON');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('b'), backupDoc('a', 'Conflict')] });
+  await expect(page.locator('[data-backup-error]')).toContainText('Conflict');
+  expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBe(before);
+  await expect(page.locator('#content')).toHaveValue('Nog niet opgeslagen');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+});
+
+test('failed import write does not claim success or render imported documents', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a')] });
+  await expect(page.locator('[data-backup-error]')).toContainText('Niet opgeslagen');
+  await expect(page.locator('[data-backup-status]')).toBeEmpty();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+});

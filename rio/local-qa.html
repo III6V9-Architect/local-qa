@@ -50,6 +50,27 @@
 
       <section class="panel">
         <h2>Mijn documenten</h2>
+        <label>Zoeken in titel, inhoud of herkomst
+          <input id="document-search" type="search" placeholder="Zoek documenten" />
+        </label>
+        <label>Filter op status
+          <select id="document-filter">
+            <option value="">Alle statussen</option>
+            <option value="draft">draft</option>
+            <option value="historisch">historisch</option>
+            <option value="specificatie">specificatie</option>
+          </select>
+        </label>
+        <p data-result-count role="status"></p>
+        <div class="actions backup-actions">
+          <button id="export-documents" type="button" class="secondary">Alles exporteren</button>
+          <label>Back-up importeren (JSON, maximaal 5 MB)
+            <input id="import-documents" type="file" accept=".json,application/json" />
+          </label>
+        </div>
+        <p>Export bevat alle opgeslagen documenten. Import voegt documenten toe; identieke documenten worden overgeslagen. Conflicten worden geweigerd.</p>
+        <p data-backup-status role="status"></p>
+        <p data-backup-error class="error" role="alert"></p>
         <p data-library-empty>Nog geen opgeslagen documenten.</p>
         <ul data-document-list class="document-list" aria-label="Opgeslagen documenten"></ul>
         <button type="button" id="delete-document" class="secondary" disabled>Geselecteerd document verwijderen</button>
