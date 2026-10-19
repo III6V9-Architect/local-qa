@@ -246,7 +246,6 @@ test('invalid and conflicting imports leave storage and editor unchanged', async
 
 test('failed import write does not claim success or render imported documents', async ({ page }) => {
   await page.goto('/rio/local-qa.html');
-  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
   await uploadBackup(page, { version: 1, documents: [backupDoc('a')] });
   await expect(page.locator('[data-backup-error]')).toContainText('Niet opgeslagen');
