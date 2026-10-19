@@ -4,6 +4,7 @@ import {
   createDocument,
   createQuote,
 } from './local-qa.mjs';
+import { parseTextFile, validateTextFile } from './text-file.mjs';
 import { searchPassages } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
@@ -48,6 +49,8 @@ function confirmDiscard() {
 }
 
 function resetEditor() {
+  document.querySelector('[data-file-status]').textContent = '';
+  document.querySelector('[data-file-error]').textContent = '';
   state.currentDocument = null;
   state.quotes = [];
   updateFormState(null);
@@ -61,6 +64,8 @@ function resetEditor() {
 function openDocument(doc) {
   if (doc.documentId === state.currentDocument?.documentId) return true;
   if (!confirmDiscard()) return false;
+  document.querySelector('[data-file-status]').textContent = '';
+  document.querySelector('[data-file-error]').textContent = '';
   document.querySelector('[data-save-status]').textContent = '';
   state.currentDocument = doc;
   state.quotes = [createQuote(doc, doc.content)];
@@ -189,7 +194,7 @@ function renderQuoteList() {
   }
 }
 
-function updateFormState(documentState) {
+function updateFormState(documentState, markSaved = true) {
   const originField = document.querySelector('#origin');
   const statusField = document.querySelector('#status');
   if (!originField || !statusField) return;
@@ -198,11 +203,39 @@ function updateFormState(documentState) {
   document.querySelector('#content').value = documentState?.content ?? '';
   originField.value = documentState?.source?.origin ?? '';
   statusField.value = documentState?.source?.status ?? 'draft';
-  savedFormFingerprint = formFingerprint();
+  if (markSaved) savedFormFingerprint = formFingerprint();
   updateDirtyState();
 }
 
 function attachEvents() {
+  const textInput = document.querySelector('#open-text-file');
+  textInput.addEventListener('change', async () => {
+    const file = textInput.files[0];
+    if (!file) return;
+    const fileStatus = document.querySelector('[data-file-status]');
+    const fileError = document.querySelector('[data-file-error]');
+    textInput.disabled = true;
+    fileStatus.textContent = '';
+    fileError.textContent = '';
+    try {
+      validateTextFile(file.name, file.size);
+      const parsed = parseTextFile(file.name, await file.arrayBuffer());
+      // Confirm against the current editor after asynchronous reading has finished.
+      if (!confirmDiscard()) {
+        fileStatus.textContent = 'Openen geannuleerd. Je huidige invoer is behouden.';
+        return;
+      }
+      resetEditor();
+      updateFormState(parsed, false);
+      fileStatus.textContent = `“${file.name}” geopend als nieuw document. Controleer de inhoud en klik op Document opslaan.`;
+      document.querySelector('#title').focus();
+    } catch (error) {
+      fileError.textContent = `Kon bestand niet openen. ${error.message}`;
+    } finally {
+      textInput.disabled = false;
+      textInput.value = '';
+    }
+  });
   document.querySelector('#question-form').addEventListener('submit', (event) => {
     event.preventDefault();
     lastQuestion = document.querySelector('#question').value.trim();
@@ -296,6 +329,8 @@ function attachEvents() {
         renderQuoteList();
         updateFormState(documentState);
         renderDocumentList();
+        document.querySelector('[data-file-status]').textContent = '';
+        document.querySelector('[data-file-error]').textContent = '';
         document.querySelector('[data-save-status]').textContent = 'Document lokaal opgeslagen.';
       } catch (error) {
         const errorBox = document.querySelector('[data-error-box]');

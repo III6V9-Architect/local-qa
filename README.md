@@ -83,3 +83,17 @@ session, until another successful deletion or reload. Undo restores the saved
 version at its previous position and preserves the current editor, including
 unsaved text. A same-ID conflict or failed storage write keeps undo available and
 leaves the collection unchanged. Undo is not a persistent recycle bin.
+
+## Open a text file
+
+Use the file picker above the editor to open a local `.txt`, `.md`, or `.markdown`
+file (UTF-8, up to 1 MB). The filename supplies the title and user-declared origin;
+status starts as `draft`. The file is read only in the browser. Markdown is kept
+as literal text, including any HTML, and never rendered as executable markup.
+
+Opening creates an unsaved new editor document, even when an existing document
+was selected. Review it and press Document opslaan to add it to the collection.
+Unsaved edits require discard confirmation. Invalid UTF-8, binary control
+characters, blank content, unsupported extensions, oversized files, and read
+failures leave the current editor and saved collection unchanged. PDF and Word
+extraction are not supported. Reopening a file and saving creates another document.
