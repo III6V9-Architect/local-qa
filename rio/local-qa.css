@@ -158,3 +158,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .panel { min-width: 0; }
 .panel > label { margin-bottom: .75rem; }
 input[type="file"] { max-width: 100%; }
+
+.question-panel { grid-column: 1 / -1; }
+[data-passage-list] blockquote { white-space: pre-wrap; max-height: 20rem; overflow: auto; overflow-wrap: anywhere; margin-bottom: 1rem; }
+[data-passage-list] h3 { margin-top: 0; }

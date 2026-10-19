@@ -77,6 +77,18 @@
         <h2>Citaat</h2>
         <ul data-quote-list class="quote-list"></ul>
       </section>
+      <section class="panel question-panel" aria-labelledby="question-heading">
+        <h2 id="question-heading">Vraag over je documenten</h2>
+        <p>Zoek op woorden uit je vraag in alle opgeslagen documenten. Je krijgt letterlijke alinea’s met bronvermelding. De zoekfunctie begrijpt geen betekenis of synoniemen en stelt geen zelfstandig antwoord op.</p>
+        <form id="question-form">
+          <label>Je vraag
+            <input id="question" type="text" placeholder="Wat staat er over waterkwaliteit?" />
+          </label>
+          <button type="submit">Zoek passages</button>
+        </form>
+        <p data-question-status role="status"></p>
+        <ol data-passage-list class="quote-list"></ol>
+      </section>
     </main>
 
     <script type="module" src="./local-qa-ui.mjs"></script>
