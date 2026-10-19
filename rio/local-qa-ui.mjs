@@ -4,6 +4,7 @@ import {
   createDocument,
   createQuote,
 } from './local-qa.mjs';
+import { searchPassages } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, MAX_IMPORT_BYTES } from './document-library.mjs';
 
@@ -15,6 +16,18 @@ const state = {
 
 let store;
 let storageError = '';
+let lastQuestion = '';
+
+function openDocument(doc) {
+  document.querySelector('[data-save-status]').textContent = '';
+  state.currentDocument = doc;
+  state.quotes = [createQuote(doc, doc.content)];
+  updateFormState(doc);
+  renderQuoteList();
+  renderDocumentList();
+  showError();
+}
+
 
 function showError(error = '') {
   document.querySelector('[data-error-box]').textContent = error instanceof Error ? error.message : error;
@@ -33,15 +46,7 @@ function renderDocumentList() {
     button.type = 'button';
     button.textContent = doc.title;
     button.setAttribute('aria-pressed', String(doc.documentId === state.currentDocument?.documentId));
-    button.addEventListener('click', () => {
-      document.querySelector('[data-save-status]').textContent = '';
-      state.currentDocument = doc;
-      state.quotes = [createQuote(doc, doc.content)];
-      updateFormState(doc);
-      renderQuoteList();
-      renderDocumentList();
-      showError();
-    });
+    button.addEventListener('click', () => openDocument(doc));
     item.appendChild(button);
     list.appendChild(item);
   }
@@ -49,6 +54,51 @@ function renderDocumentList() {
   empty.hidden = visible.length > 0;
   empty.textContent = state.documents.length ? 'Geen documenten gevonden.' : 'Nog geen opgeslagen documenten.';
   document.querySelector('#delete-document').disabled = !state.currentDocument;
+}
+
+function renderPassages() {
+  const list = document.querySelector('[data-passage-list]');
+  const message = document.querySelector('[data-question-status]');
+  list.replaceChildren();
+  if (!lastQuestion) {
+    message.textContent = 'Stel een vraag om passages in alle opgeslagen documenten te zoeken.';
+    return;
+  }
+  try {
+    if (storageError) throw new Error(storageError);
+    const results = searchPassages(state.documents, lastQuestion);
+    message.textContent = results.length
+      ? `${results.length} passende passages (maximaal 5). Controleer de bron en context.`
+      : 'Geen passende passages gevonden. Probeer andere zoekwoorden.';
+    for (const result of results) {
+      const item = document.createElement('li');
+      item.className = 'quote-item';
+      item.dataset.testid = 'passage-card';
+      const title = document.createElement('h3');
+      title.textContent = `${result.title} — alinea ${result.paragraphNumber}`;
+      const metadata = document.createElement('p');
+      metadata.textContent = result.rendered;
+      const matched = document.createElement('p');
+      matched.textContent = `Gevonden woorden: ${result.matchedTerms.join(', ')}`;
+      const quote = document.createElement('blockquote');
+      quote.textContent = result.quote;
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'secondary';
+      open.textContent = 'Open brondocument';
+      open.addEventListener('click', () => {
+        const doc = state.documents.find((doc) => doc.documentId === result.documentId);
+        if (doc) {
+          openDocument(doc);
+          document.querySelector('#title').focus();
+        }
+      });
+      item.append(title, metadata, matched, quote, open);
+      list.appendChild(item);
+    }
+  } catch (error) {
+    message.textContent = error.message;
+  }
 }
 
 function persist(documents) {
@@ -109,6 +159,15 @@ function updateFormState(documentState) {
 }
 
 function attachEvents() {
+  document.querySelector('#question-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    lastQuestion = document.querySelector('#question').value.trim();
+    renderPassages();
+  });
+  document.querySelector('#question').addEventListener('input', () => {
+    lastQuestion = '';
+    renderPassages();
+  });
   const form = document.querySelector('#document-form');
   const resetButton = document.querySelector('#reset-document');
   document.querySelector('#document-search').addEventListener('input', renderDocumentList);
@@ -148,6 +207,7 @@ function attachEvents() {
       persist(result.documents);
       state.documents = result.documents;
       renderDocumentList();
+      renderPassages();
       backupStatus.textContent = `${result.added} toegevoegd, ${result.skipped} overgeslagen.`;
     } catch (error) {
       backupError.textContent = error.message;
@@ -182,6 +242,7 @@ function attachEvents() {
         documents.push(documentState);
         persist(documents);
         state.documents = documents;
+        renderPassages();
         state.currentDocument = documentState;
         state.quotes = [quote];
         const errorBox = document.querySelector('[data-error-box]');
@@ -205,6 +266,7 @@ function attachEvents() {
       const documents = state.documents.filter((doc) => doc.documentId !== state.currentDocument.documentId);
       persist(documents);
       state.documents = documents;
+      renderPassages();
       resetButton.click();
       document.querySelector('[data-save-status]').textContent = 'Document verwijderd.';
     } catch (error) {
@@ -240,6 +302,7 @@ if (typeof document !== 'undefined') {
     document.querySelector('[data-storage-error]').textContent = storageError;
   }
   attachEvents();
+  renderPassages();
   renderDocumentList();
   renderQuoteList();
   updateFormState(null);

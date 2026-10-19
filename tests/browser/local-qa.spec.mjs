@@ -8,7 +8,7 @@ test.describe('local qa metadata flow', () => {
     await page.fill('#content', 'Dit is een testcitaat uit het document.');
     await page.fill('#origin', 'Bureau A');
     await page.selectOption('#status', 'historisch');
-    await page.click('button[type="submit"]');
+    await page.locator('#document-form button[type="submit"]').click();
 
     await expect(page.locator('[data-testid="quote-card"]')).toContainText('Bureau A · historisch');
     await expect(page.locator('[data-testid="quote-card"]')).toContainText('gebruikersopgave — niet geverifieerd');
@@ -24,7 +24,7 @@ test.describe('local qa metadata flow', () => {
       document.querySelector('#status').add(new Option('invalid', 'invalid-status'));
     });
     await page.selectOption('#status', 'invalid-status');
-    await page.click('button[type="submit"]');
+    await page.locator('#document-form button[type="submit"]').click();
 
     await expect(page.locator('[data-error-box]')).toContainText('Ongeldige status');
     await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(0);
@@ -40,21 +40,21 @@ async function fillDocument(page, content = 'Eerste inhoud') {
 test('validation preserves the old quote and successful retry clears the error', async ({ page }) => {
   await page.goto('/rio/local-qa.html');
   await fillDocument(page);
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   for (const content of ['', '   ']) {
     await page.fill('#content', content);
-    await page.click('button[type="submit"]');
+    await page.locator('#document-form button[type="submit"]').click();
     await expect(page.locator('[data-error-box]')).toHaveText('Documentinhoud is vereist.');
     await expect(page.locator('blockquote')).toHaveText('Eerste inhoud');
   }
   await page.fill('#title', '   ');
   await page.fill('#content', 'Nieuwe inhoud');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).toHaveText('Documenttitel is vereist.');
   await page.fill('#title', 'Nieuw document');
   await page.fill('#origin', 'Bron B');
   await page.selectOption('#status', 'specificatie');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).toBeEmpty();
   await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(1);
   await expect(page.locator('blockquote')).toHaveText('Nieuwe inhoud');
@@ -68,7 +68,7 @@ for (const status of ['draft', 'historisch', 'specificatie']) {
     await fillDocument(page, content);
     await page.fill('#origin', '   ');
     await page.selectOption('#status', status);
-    await page.click('button[type="submit"]');
+    await page.locator('#document-form button[type="submit"]').click();
     await expect(page.locator('.quote-meta')).toHaveText(`ONBEKEND · ${status}`);
     await expect(page.locator('.quote-disclaimer')).toHaveText('gebruikersopgave — niet geverifieerd');
     await expect(page.locator('blockquote')).toHaveText(content);
@@ -80,9 +80,9 @@ test('reset clears fields, quote and error, then permits a fresh save', async ({
   await page.goto('/rio/local-qa.html');
   await fillDocument(page);
   await page.selectOption('#status', 'historisch');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await page.fill('#content', '');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).not.toBeEmpty();
   await page.click('#reset-document');
   for (const field of ['title', 'content', 'origin']) {
@@ -94,7 +94,7 @@ test('reset clears fields, quote and error, then permits a fresh save', async ({
   await expect(page.locator('.empty-state')).toBeVisible();
   await fillDocument(page, 'Na reset');
   await page.fill('#origin', 'Nieuwe bron');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('blockquote')).toHaveText('Na reset');
   await expect(page.locator('.quote-meta')).toHaveText('Nieuwe bron · draft');
 });
@@ -105,11 +105,11 @@ test('multiple documents survive reload, support edits and persistent deletion',
   await fillDocument(page, 'Inhoud A');
   await page.fill('#title', 'Document A');
   await page.selectOption('#status', 'historisch');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await page.click('#reset-document');
   await fillDocument(page, 'Inhoud B');
   await page.fill('#title', 'Document B');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-document-list] button')).toHaveCount(2);
   await page.reload();
   await page.getByRole('button', { name: 'Document A', exact: true }).click();
@@ -117,7 +117,7 @@ test('multiple documents survive reload, support edits and persistent deletion',
   await expect(page.locator('blockquote')).toHaveText('Inhoud A');
   await expect(page.locator('.quote-disclaimer')).toHaveText('gebruikersopgave — niet geverifieerd');
   await page.fill('#content', 'A gewijzigd');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-document-list] button')).toHaveCount(2);
   await page.reload();
   await page.getByRole('button', { name: 'Document A', exact: true }).click();
@@ -136,7 +136,7 @@ test('corrupt storage is preserved and blocks saving', async ({ page }) => {
   await page.reload();
   await expect(page.locator('[data-storage-error]')).toContainText('beschadigd');
   await fillDocument(page);
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).toContainText('beschadigd');
   await expect(page.locator('[data-document-list] button')).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBe('{broken');
@@ -145,10 +145,10 @@ test('corrupt storage is preserved and blocks saving', async ({ page }) => {
 test('quota failure preserves the previous quote and editable input', async ({ page }) => {
   await page.goto('/rio/local-qa.html');
   await fillDocument(page);
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
   await page.fill('#content', 'Niet opgeslagen');
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await expect(page.locator('[data-error-box]')).toContainText('Niet opgeslagen');
   await expect(page.locator('blockquote')).toHaveText('Eerste inhoud');
   await expect(page.locator('#content')).toHaveValue('Niet opgeslagen');
@@ -160,9 +160,9 @@ test('another tab cannot silently overwrite newer documents', async ({ page, con
   const other = await context.newPage();
   await other.goto('/rio/local-qa.html');
   await fillDocument(page);
-  await page.click('button[type="submit"]');
+  await page.locator('#document-form button[type="submit"]').click();
   await fillDocument(other, 'Ander tabblad');
-  await other.click('button[type="submit"]');
+  await other.locator('#document-form button[type="submit"]').click();
   await expect(other.locator('[data-error-box]')).toContainText('ander tabblad');
   await other.reload();
   await expect(other.locator('[data-document-list] button')).toHaveCount(1);
@@ -247,4 +247,59 @@ test('failed import write does not claim success or render imported documents', 
   await expect(page.locator('[data-backup-error]')).toContainText('Niet opgeslagen');
   await expect(page.locator('[data-backup-status]')).toBeEmpty();
   await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+});
+
+test('question retrieves source passages across filters and opens the source', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  const source = { ...backupDoc('qa', 'Waterrapport', 'historisch'), content: 'Inleiding.\n\nWaterkwaliteit is niet vastgesteld.' };
+  await uploadBackup(page, { version: 1, documents: [source] });
+  await expect(page.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  await page.fill('#document-search', 'verbergt alles');
+  await page.fill('#question', 'Wat is de waterkwaliteit?');
+  await page.locator('#question').press('Enter');
+  const card = page.locator('[data-testid="passage-card"]');
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('Waterrapport — alinea 2');
+  await expect(card).toContainText('Archief · historisch');
+  await expect(card).toContainText('gebruikersopgave — niet geverifieerd');
+  await expect(card.locator('blockquote')).toHaveText('Waterkwaliteit is niet vastgesteld.');
+  await card.getByRole('button', { name: 'Open brondocument' }).click();
+  await expect(page.locator('#title')).toHaveValue('Waterrapport');
+  await expect(page.locator('#content')).toHaveValue(source.content);
+  await expect(page.locator('#title')).toBeFocused();
+});
+
+test('question results refresh on edit, import and delete', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Water is aanwezig.');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.fill('#question', 'water');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await page.fill('#content', 'Zand is aanwezig.');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+  await expect(page.locator('[data-question-status]')).toContainText('Geen passende passages');
+  await uploadBackup(page, { version: 1, documents: [{ ...backupDoc('qa-new', 'Nieuw water'), content: 'Water keert terug.' }] });
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await page.locator('[data-testid="passage-card"]').getByRole('button').click();
+  await page.click('#delete-document');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+});
+
+test('question has clear empty states and safely renders imported markup', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.fill('#question', 'wat is de');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-question-status]')).toContainText('zoekwoord');
+  await page.fill('#question', 'water');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-question-status]')).toContainText('Geen passende passages');
+  const source = { ...backupDoc('markup', '<img src=x>'), content: 'Water <img src=x onerror="window.injected=true">' };
+  await uploadBackup(page, { version: 1, documents: [source] });
+  const card = page.locator('[data-testid="passage-card"]');
+  await expect(card.locator('blockquote')).toHaveText(source.content);
+  await expect(card.locator('img')).toHaveCount(0);
+  await page.fill('#question', 'zand');
+  await expect(card).toHaveCount(0);
 });
