@@ -111,3 +111,16 @@ not an independently verified answer. Editing the question clears the results
 and disables export until a new search finds passages. Saving, importing,
 deleting, or undoing deletion refreshes the downloadable results. Exports use
 saved content; unsaved editor changes are excluded.
+
+## Refine question results
+
+The question form has its own document-status filter and a choice between at
+least one search word (default) and all search words in the same paragraph.
+Common Dutch function words are still excluded, and repeated words count once.
+Changing either option reruns the last submitted question. The document-list
+filter remains independent. No-match results suggest adjusting words or options.
+
+Each passage shows matched-word coverage and highlights whole matching words.
+Highlights are DOM text/mark nodes: spelling, accents, punctuation, line breaks,
+and literal markup stay intact. Copied citations and reports contain the original
+plain text without highlight markup. Downloaded reports record both search options.

@@ -591,3 +591,75 @@ test('export refreshes after saved edits and disables when sources disappear', a
   await page.click('#delete-document');
   await expect(page.locator('#export-passages')).toBeDisabled();
 });
+
+test('question status and all-word filters rerun the submitted search and export criteria', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [
+    { ...backupDoc('any', 'Deelmatch'), content: 'Water alleen.' },
+    { ...backupDoc('all', 'Volledige match', 'specificatie'), content: 'Water kwaliteit.' },
+    { ...backupDoc('old', 'Historie', 'historisch'), content: 'Water kwaliteit vroeger.' },
+  ] });
+  await expect(page.locator('[data-backup-status]')).toContainText('3 toegevoegd');
+  await page.fill('#question', 'water kwaliteit');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(3);
+  await page.selectOption('#question-match', 'all');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(2);
+  await page.selectOption('#question-status-filter', 'specificatie');
+  const card = page.locator('[data-testid="passage-card"]');
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('Volledige match');
+  await expect(card).toContainText('Gevonden woorden (2 van 2): water, kwaliteit');
+  const pending = page.waitForEvent('download');
+  await page.click('#export-passages');
+  const text = await readFile(await (await pending).path(), 'utf8');
+  expect(text).toContain('Statusfilter: specificatie');
+  expect(text).toContain('Zoekmodus: alle zoekwoorden');
+  expect(text).toContain('Document-ID: all');
+  expect(text).not.toContain('Document-ID: old');
+  await page.selectOption('#question-status-filter', 'draft');
+  await expect(card).toHaveCount(0);
+  await expect(page.locator('#export-passages')).toBeDisabled();
+  await page.selectOption('#question-match', 'any');
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('Deelmatch');
+});
+
+test('highlighted Unicode passages preserve literal text and copy without markup', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  const content = 'Cafe\u0301, CAFÉ! <img src=x> waterkwaliteit water.';
+  await uploadBackup(page, { version: 1, documents: [{ ...backupDoc('unicode'), content }] });
+  await expect(page.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  await page.fill('#question', 'café water');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  const card = page.locator('[data-testid="passage-card"]');
+  expect(await card.locator('blockquote').textContent()).toBe(content);
+  await expect(card.locator('mark')).toHaveText(['Cafe\u0301', 'CAFÉ', 'water']);
+  await expect(card.locator('img')).toHaveCount(0);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
+    configurable: true, value: { writeText: async (text) => { window.copiedCitation = text; } },
+  }));
+  await card.getByRole('button', { name: 'Kopieer citaat met bron' }).click();
+  await expect(card.getByRole('status')).toContainText('gekopieerd');
+  const text = await page.evaluate(() => window.copiedCitation);
+  expect(text).toContain(content);
+  expect(text).not.toContain('<mark>');
+});
+
+test('question filter follows saved status changes while keeping collection filters independent', async ({ page }) => {
+  await prepareCitationSearch(page);
+  await page.selectOption('#question-status-filter', 'historisch');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await page.selectOption('#document-filter', 'draft');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await page.locator('[data-testid="passage-card"]').getByRole('button', { name: 'Open brondocument' }).click();
+  await page.selectOption('#status', 'specificatie');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+  await page.selectOption('#question-status-filter', 'specificatie');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(1);
+  await page.fill('#question', 'nieuwe vraag');
+  await page.selectOption('#question-match', 'all');
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+  await expect(page.locator('#export-passages')).toBeDisabled();
+});
