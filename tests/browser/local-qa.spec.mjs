@@ -663,3 +663,104 @@ test('question filter follows saved status changes while keeping collection filt
   await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
   await expect(page.locator('#export-passages')).toBeDisabled();
 });
+
+test('new incomplete draft can be recovered after reload and cleared by save', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.fill('#content', 'Concept zonder titel');
+  await expect(page.locator('[data-draft-status]')).toContainText('tijdelijk bewaard');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await expect(page.locator('[data-draft-recovery]')).toBeVisible();
+  await expect(page.locator('#content')).toHaveValue('');
+  await page.click('#restore-draft');
+  await expect(page.locator('#content')).toHaveValue('Concept zonder titel');
+  await expect(page.locator('[data-dirty-status]')).toContainText('Niet-opgeslagen');
+  await page.fill('#title', 'Hersteld document');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.reload();
+  await expect(page.locator('[data-draft-recovery]')).toBeHidden();
+  await page.getByRole('button', { name: 'Hersteld document', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('Concept zonder titel');
+});
+
+test('existing-document draft recovers as an update when its source is unchanged', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Opgeslagen tekst');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.fill('#content', 'Conceptwijziging');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await page.click('#restore-draft');
+  await expect(page.locator('#content')).toHaveValue('Conceptwijziging');
+  await expect(page.locator('[data-testid="quote-card"] blockquote')).toHaveText('Opgeslagen tekst');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  await expect(page.locator('[data-testid="quote-card"] blockquote')).toHaveText('Conceptwijziging');
+});
+
+test('draft recovery makes a copy if another tab changed the original', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Oorspronkelijk');
+  await page.locator('#document-form button[type="submit"]').click();
+  await page.fill('#content', 'Mijn concept');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await other.getByRole('button', { name: 'Document', exact: true }).click();
+  await other.fill('#content', 'Nieuwere bron');
+  await other.locator('#document-form button[type="submit"]').click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await page.click('#restore-draft');
+  await expect(page.locator('[data-save-status]')).toContainText('hersteld als nieuw document');
+  await expect(page.locator('#content')).toHaveValue('Mijn concept');
+  await page.fill('#title', 'Herstelde kopie');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Document', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('Nieuwere bron');
+});
+
+test('pending and corrupt recovery records stay intact until an explicit choice', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.fill('#content', 'Bewaard concept');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  const before = await page.evaluate(() => sessionStorage.getItem('local-qa.editor-draft.v1'));
+  await page.fill('#content', 'Nieuwe invoer');
+  expect(await page.evaluate(() => sessionStorage.getItem('local-qa.editor-draft.v1'))).toBe(before);
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.click('#restore-draft');
+  await expect(page.locator('#content')).toHaveValue('Nieuwe invoer');
+  await page.click('#discard-draft');
+  await expect(page.locator('[data-draft-recovery]')).toBeHidden();
+  await expect(page.locator('#content')).toHaveValue('Nieuwe invoer');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.click('#reset-document');
+  await page.evaluate(() => sessionStorage.setItem('local-qa.editor-draft.v1', '{broken'));
+  await page.reload();
+  await expect(page.locator('[data-recovery-message]')).toContainText('beschadigd');
+  await expect(page.locator('#restore-draft')).toBeDisabled();
+  await page.fill('#content', 'Invoer na beschadiging');
+  expect(await page.evaluate(() => sessionStorage.getItem('local-qa.editor-draft.v1'))).toBe('{broken');
+  await page.click('#discard-draft');
+  await expect(page.locator('[data-draft-recovery]')).toBeHidden();
+  await expect(page.locator('#content')).toHaveValue('Invoer na beschadiging');
+  await expect(page.locator('[data-draft-status]')).toContainText('tijdelijk bewaard');
+});
+
+test('session storage write failure leaves the editor usable', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'local-qa.editor-draft.v1') throw new Error('Quota');
+      return original.call(this, key, value);
+    };
+  });
+  await fillDocument(page, 'Nog steeds bewerkbaar');
+  await expect(page.locator('[data-draft-status]')).toContainText('kon niet tijdelijk worden bewaard');
+  await expect(page.locator('#content')).toHaveValue('Nog steeds bewerkbaar');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  await expect(page.locator('[data-dirty-status]')).toBeEmpty();
+});

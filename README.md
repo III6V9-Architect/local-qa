@@ -124,3 +124,22 @@ Each passage shows matched-word coverage and highlights whole matching words.
 Highlights are DOM text/mark nodes: spelling, accents, punctuation, line breaks,
 and literal markup stay intact. Copied citations and reports contain the original
 plain text without highlight markup. Downloaded reports record both search options.
+
+## Recover an editor draft
+
+Unsaved editor fields are temporarily saved to sessionStorage in the current tab.
+After reload, a recovery prompt offers restore or discard. It does not replace
+current input automatically. While that prompt is pending, the old draft stays
+untouched; choose restore/discard before relying on recovery for new input.
+
+A restored draft updates its original document only if that document still matches
+the saved baseline. If the document changed or was deleted, recovery creates a new
+unsaved document instead. The full collection is not overwritten. Incomplete
+fields are recoverable; ordinary validation still applies when saving.
+
+Successful saves, explicit editor reset/discard, and switching away after discard
+clear the active draft. Corrupt draft records remain untouched until explicitly
+discarded. Storage failures are visible and do not block normal document editing.
+Session storage is temporary and normally ends with the tab; use document save
+and JSON backups for durable storage. Browser tab duplication may copy session
+storage initially, after which each tab has its own draft.
