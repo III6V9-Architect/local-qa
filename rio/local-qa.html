@@ -94,6 +94,20 @@
           <label>Je vraag
             <input id="question" type="text" placeholder="Wat staat er over waterkwaliteit?" />
           </label>
+          <label>Documentstatus bij deze vraag
+            <select id="question-status-filter">
+              <option value="">Alle statussen</option>
+              <option value="draft">draft</option>
+              <option value="historisch">historisch</option>
+              <option value="specificatie">specificatie</option>
+            </select>
+          </label>
+          <label>Zoekwoorden combineren
+            <select id="question-match">
+              <option value="any">Minstens één zoekwoord</option>
+              <option value="all">Alle zoekwoorden in dezelfde alinea</option>
+            </select>
+          </label>
           <button type="submit">Zoek passages</button>
         </form>
         <p data-question-status role="status"></p>

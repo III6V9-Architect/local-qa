@@ -33,3 +33,10 @@ test('report requires a question and at least one result', () => {
   assert.throws(() => formatPassageReport(' ', [passage]), /Zoek eerst/);
   assert.throws(() => formatPassageReport('water', []), /Zoek eerst/);
 });
+
+test('report records the status and matching criteria', () => {
+  const text = formatPassageReport('water kwaliteit', [passage], { status: 'historisch', match: 'all' });
+  assert.ok(text.includes('Statusfilter: historisch'));
+  assert.ok(text.includes('Zoekmodus: alle zoekwoorden'));
+  assert.ok(text.includes(passage.quote));
+});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDocument, USER_DISCLAIMER } from './local-qa.mjs';
-import { searchPassages } from './passage-search.mjs';
+import { searchPassages, highlightParts } from './passage-search.mjs';
 
 const doc = (id, content, status = 'draft') => createDocument({ documentId: id, title: `Bron ${id}`, content, origin: 'Archief', status });
 
@@ -51,4 +51,37 @@ test('results reflect edits and removals without mutating documents', () => {
   assert.equal(JSON.stringify(docs), before);
   assert.deepEqual(searchPassages([doc('a', 'Zand.')], 'water'), []);
   assert.deepEqual(searchPassages([], 'water'), []);
+});
+
+test('all-word mode requires distinct terms in the same paragraph', () => {
+  const docs = [doc('a', 'Water.\n\nKwaliteit.'), doc('b', 'Water kwaliteit.')];
+  assert.equal(searchPassages(docs, 'water kwaliteit').length, 3);
+  const results = searchPassages(docs, 'Wat is water kwaliteit water?', { match: 'all' });
+  assert.deepEqual(results.map((result) => result.documentId), ['b']);
+  assert.deepEqual(results[0].queryTerms, ['water', 'kwaliteit']);
+});
+
+test('status filter applies before ranking and the result limit', () => {
+  const docs = Array.from({ length: 6 }, (_, index) => doc(`draft-${index}`, 'Water kwaliteit.'));
+  docs.push(doc('spec', 'Water.', 'specificatie'));
+  const results = searchPassages(docs, 'water kwaliteit', { status: 'specificatie' });
+  assert.deepEqual(results.map((result) => result.documentId), ['spec']);
+  assert.deepEqual(searchPassages(docs, 'water', { status: 'historisch' }), []);
+  assert.throws(() => searchPassages(docs, 'water', { status: 'verified' }), /statusfilter/);
+  assert.throws(() => searchPassages(docs, 'water', { match: 'unknown' }), /zoekmodus/);
+});
+
+test('highlighting preserves original Unicode, whitespace and literal markup', () => {
+  const text = 'Cafe\u0301, CAFÉ!\n<img src=x> water.';
+  const parts = highlightParts(text, ['café', 'water']);
+  assert.equal(parts.map((part) => part.text).join(''), text);
+  assert.deepEqual(parts.filter((part) => part.matched).map((part) => part.text), ['Cafe\u0301', 'CAFÉ', 'water']);
+});
+
+test('highlighting matches whole words and preserves no-match strings', () => {
+  assert.deepEqual(highlightParts('waterkwaliteit water', ['water']), [
+    { text: 'waterkwaliteit ', matched: false }, { text: 'water', matched: true },
+  ]);
+  assert.deepEqual(highlightParts('zand', ['water']), [{ text: 'zand', matched: false }]);
+  assert.deepEqual(highlightParts('', ['water']), []);
 });

@@ -14,12 +14,14 @@ export function formatCitation(passage) {
   ].join('\n');
 }
 
-export function formatPassageReport(question, passages) {
+export function formatPassageReport(question, passages, { status = '', match = 'any' } = {}) {
   if (!question.trim() || !passages.length) throw new Error('Zoek eerst passages bij een vraag.');
   return [
     'Local Q&A — bronnen bij je vraag',
     `Vraag: ${question.trim()}`,
     'Dit zijn zoekwoordresultaten uit opgeslagen documenten, geen zelfstandig antwoord of verificatie.',
+    `Statusfilter: ${status || 'alle statussen'}`,
+    `Zoekmodus: ${match === 'all' ? 'alle zoekwoorden' : 'minstens één zoekwoord'}`,
     `Aantal passages: ${passages.length}`,
     '',
     ...passages.map((passage, index) => `Passage ${index + 1}\n${formatCitation(passage)}`),

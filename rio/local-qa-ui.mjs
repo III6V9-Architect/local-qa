@@ -6,7 +6,7 @@ import {
 } from './local-qa.mjs';
 import { parseTextFile, validateTextFile } from './text-file.mjs';
 import { formatCitation, formatPassageReport } from './citation-export.mjs';
-import { searchPassages } from './passage-search.mjs';
+import { searchPassages, highlightParts } from './passage-search.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
 
@@ -20,6 +20,7 @@ let store;
 let storageError = '';
 let lastQuestion = '';
 let currentPassages = [];
+let currentSearchOptions = { status: '', match: 'any' };
 let savedFormFingerprint = '';
 let lastDeleted = null;
 let unloadGuardAttached = false;
@@ -119,12 +120,16 @@ function renderPassages() {
   }
   try {
     if (storageError) throw new Error(storageError);
-    const results = searchPassages(state.documents, lastQuestion);
+    currentSearchOptions = {
+      status: document.querySelector('#question-status-filter').value,
+      match: document.querySelector('#question-match').value,
+    };
+    const results = searchPassages(state.documents, lastQuestion, currentSearchOptions);
     currentPassages = results;
     document.querySelector('#export-passages').disabled = !results.length;
     message.textContent = results.length
       ? `${results.length} passende passages (maximaal 5). Controleer de bron en context.`
-      : 'Geen passende passages gevonden. Probeer andere zoekwoorden.';
+      : 'Geen passende passages gevonden. Probeer andere zoekwoorden of zoekinstellingen.';
     for (const result of results) {
       const item = document.createElement('li');
       item.className = 'quote-item';
@@ -134,9 +139,17 @@ function renderPassages() {
       const metadata = document.createElement('p');
       metadata.textContent = result.rendered;
       const matched = document.createElement('p');
-      matched.textContent = `Gevonden woorden: ${result.matchedTerms.join(', ')}`;
+      matched.textContent = `Gevonden woorden (${result.matchedTerms.length} van ${result.queryTerms.length}): ${result.matchedTerms.join(', ')}`;
       const quote = document.createElement('blockquote');
-      quote.textContent = result.quote;
+      for (const part of highlightParts(result.quote, result.matchedTerms)) {
+        if (part.matched) {
+          const mark = document.createElement('mark');
+          mark.textContent = part.text;
+          quote.appendChild(mark);
+        } else {
+          quote.appendChild(document.createTextNode(part.text));
+        }
+      }
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'secondary';
@@ -261,7 +274,7 @@ function attachEvents() {
   document.querySelector('#export-passages').addEventListener('click', () => {
     const message = document.querySelector('[data-passage-export-status]');
     try {
-      const text = formatPassageReport(lastQuestion, currentPassages);
+      const text = formatPassageReport(lastQuestion, currentPassages, currentSearchOptions);
       downloadText(text, 'local-qa-passages.txt', 'text/plain;charset=utf-8');
       message.textContent = 'Vraag en passages met bronvermelding gedownload.';
     } catch (error) {
@@ -296,6 +309,8 @@ function attachEvents() {
       textInput.value = '';
     }
   });
+  document.querySelector('#question-status-filter').addEventListener('change', renderPassages);
+  document.querySelector('#question-match').addEventListener('change', renderPassages);
   document.querySelector('#question-form').addEventListener('submit', (event) => {
     event.preventDefault();
     lastQuestion = document.querySelector('#question').value.trim();
