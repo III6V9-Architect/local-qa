@@ -2,7 +2,7 @@ import { createDocument } from './local-qa.mjs';
 
 export const STORAGE_KEY = 'local-qa.documents.v1';
 
-function validateDocuments(documents) {
+export function validateDocuments(documents) {
   if (!Array.isArray(documents)) throw new Error('Ongeldige documentenlijst.');
   const ids = new Set();
   return documents.map((doc) => {

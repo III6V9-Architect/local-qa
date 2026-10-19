@@ -40,3 +40,18 @@ On Linux, use `npx playwright install --with-deps chromium` when browser system
 dependencies are missing. Playwright starts the Python server automatically.
 GitHub Actions runs both suites using the committed dependency lockfile.
 
+
+## Search and backups
+
+Search matches title, document text, or origin without case sensitivity. Combine
+it with a status filter. Filtering leaves the selected editor and quote intact.
+Export always downloads all saved documents, regardless of the filter; unsaved
+editor changes are excluded. The JSON file contains the full document text.
+
+Import accepts version 1 JSON backups up to 5 MB. All records are validated before
+saving. Identical IDs with identical normalized content are skipped; an ID with
+different content rejects the entire import. Invalid records, duplicate IDs in a
+file, unsupported versions, or storage failures leave saved documents unchanged.
+Imported metadata always remains user-supplied and unverified. Export and import
+run entirely in the browser. Keep the exported file to restore your collection
+if browser site data is cleared.
