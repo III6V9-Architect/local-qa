@@ -149,7 +149,7 @@ storage initially, after which each tab has its own draft.
 Document save, JSON import, deletion, and undo acquire the same exclusive Web
 Lock before checking the stored snapshot and writing. If another tab holds the
 lock, the action fails visibly and can be retried; if its save changed storage,
-reload before retrying and use draft recovery. The editor is temporarily disabled
+use **Documenten bijwerken** before retrying; unsaved fields are preserved. The editor is temporarily disabled
 until storage and the matching UI state transition finish. Failed writes keep
 input and recovery available.
 
@@ -162,3 +162,7 @@ localStorage do not participate in that lock.
 ### Changes from another tab
 
 A storage-change notice offers **Documenten bijwerken** without reloading the page. Refresh validates the latest collection, updates search results and citations, and preserves unsaved editor fields. An unchanged source remains editable; a changed or deleted source detaches the draft into a new document so saving cannot overwrite the newer source. A clean selected document follows its latest version or clears if deleted. Invalid external storage leaves the current view intact and permits retry after repair. Pending draft recovery and delete undo remain available.
+
+### Current backups
+
+Before downloading a collection backup, the app checks that this tab's loaded snapshot still matches localStorage. External edits, deletions, corrupt data, or unavailable storage block the download with a visible error and a refresh button. Refresh first, then export again. This check does not write storage or silently replace the editor. A backup is a point-in-time snapshot; changes made after the check require a new backup.

@@ -20,7 +20,14 @@ export function validateDocuments(documents) {
 export function createDocumentStore(storage) {
   let snapshot;
   let loaded = false;
+  function assertCurrent() {
+    if (!loaded) throw new Error('Opslag kon niet worden geladen; bestaande gegevens blijven behouden.');
+    if (storage.getItem(STORAGE_KEY) !== snapshot) {
+      throw new Error('Documenten zijn in een ander tabblad gewijzigd. Werk de documenten bij voordat je doorgaat.');
+    }
+  }
   return {
+    assertCurrent,
     load() {
       loaded = false;
       const raw = storage.getItem(STORAGE_KEY);
@@ -32,10 +39,7 @@ export function createDocumentStore(storage) {
       return documents;
     },
     save(documents) {
-      if (!loaded) throw new Error('Opslag kon niet worden geladen; bestaande gegevens blijven behouden.');
-      if (storage.getItem(STORAGE_KEY) !== snapshot) {
-        throw new Error('Documenten zijn in een ander tabblad gewijzigd. Herlaad de pagina voordat je opslaat.');
-      }
+      assertCurrent();
       const raw = JSON.stringify({ version: 1, documents: validateDocuments(documents) });
       storage.setItem(STORAGE_KEY, raw);
       snapshot = raw;

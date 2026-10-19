@@ -58,3 +58,35 @@ test('failed writes and changes from another tab do not advance the snapshot', (
   first.save([]);
   assert.deepEqual(first.load(), []);
 });
+
+test('read-only snapshot checks reject stale exports without adopting external data', () => {
+  const storage = memoryStorage();
+  const store = createDocumentStore(storage);
+  assert.throws(() => store.assertCurrent(), /geladen/);
+  store.load();
+  store.assertCurrent();
+  store.save([doc()]);
+  store.assertCurrent();
+  const saved = storage.getItem(STORAGE_KEY);
+  storage.setItem(STORAGE_KEY, '{broken');
+  assert.throws(() => store.assertCurrent(), /ander tabblad/);
+  assert.throws(() => store.save([]), /ander tabblad/);
+  assert.equal(storage.getItem(STORAGE_KEY), '{broken');
+  storage.setItem(STORAGE_KEY, saved);
+  store.assertCurrent();
+  storage.setItem(STORAGE_KEY, null);
+  assert.throws(() => store.assertCurrent(), /ander tabblad/);
+  assert.deepEqual(store.load(), []);
+  store.assertCurrent();
+});
+
+test('snapshot checks propagate read failures without losing the loaded snapshot', () => {
+  const storage = memoryStorage();
+  const store = createDocumentStore(storage);
+  store.load();
+  const read = storage.getItem;
+  storage.getItem = () => { throw new Error('Unavailable'); };
+  assert.throws(() => store.assertCurrent(), /Unavailable/);
+  storage.getItem = read;
+  store.assertCurrent();
+});

@@ -460,10 +460,12 @@ function attachEvents() {
     backupError.textContent = '';
     try {
       if (storageError) throw new Error(storageError);
+      store.assertCurrent();
       downloadText(exportDocuments(state.documents), 'local-qa-backup.json', 'application/json');
       backupStatus.textContent = 'Back-up van alle opgeslagen documenten gedownload.';
     } catch (error) {
-      backupError.textContent = error.message;
+      backupError.textContent = `Back-up niet gemaakt. ${error.message}`;
+      document.querySelector('#refresh-documents').hidden = false;
     }
   });
   const importInput = document.querySelector('#import-documents');
