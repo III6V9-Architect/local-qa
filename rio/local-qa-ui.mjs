@@ -8,6 +8,7 @@ import { parseTextFile, validateTextFile } from './text-file.mjs';
 import { formatCitation, formatPassageReport } from './citation-export.mjs';
 import { createDraftStore, recoverDraft } from './draft-store.mjs';
 import { searchPassages, highlightParts } from './passage-search.mjs';
+import { writeDocuments } from './document-write.mjs';
 import { createDocumentStore } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
 
@@ -18,6 +19,7 @@ const state = {
 };
 
 let store;
+let writePending = false;
 let storageError = '';
 let lastQuestion = '';
 let currentPassages = [];
@@ -245,12 +247,27 @@ function downloadText(text, filename, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function persist(documents) {
+async function persist(documents, commit) {
   if (storageError) throw new Error(storageError);
+  if (writePending) throw new Error('Er wordt al opgeslagen. Probeer het opnieuw.');
+  const controls = document.querySelector('#app-controls');
+  const status = document.querySelector('[data-write-status]');
+  writePending = true;
+  controls.disabled = true;
+  controls.setAttribute('aria-busy', 'true');
+  status.textContent = 'Bezig met opslaan…';
   try {
-    store.save(documents);
-  } catch (error) {
-    throw new Error(`Niet opgeslagen. ${error.message}`);
+    try {
+      await writeDocuments(store, documents, navigator.locks);
+    } catch (error) {
+      throw new Error(`Niet opgeslagen. ${error.message}`);
+    }
+    commit();
+  } finally {
+    writePending = false;
+    controls.disabled = false;
+    controls.setAttribute('aria-busy', 'false');
+    status.textContent = '';
   }
 }
 
@@ -359,6 +376,7 @@ function attachEvents() {
     try {
       validateTextFile(file.name, file.size);
       const parsed = parseTextFile(file.name, await file.arrayBuffer());
+      if (writePending) throw new Error('Er wordt nog opgeslagen. Open het bestand daarna opnieuw.');
       // Confirm against the current editor after asynchronous reading has finished.
       if (!confirmDiscard()) {
         fileStatus.textContent = 'Openen geannuleerd. Je huidige invoer is behouden.';
@@ -416,11 +434,12 @@ function attachEvents() {
       if (file.size > MAX_IMPORT_BYTES) throw new Error('Het bestand is te groot. Maximaal 5 MB.');
       const text = await file.text();
       const result = importDocuments(state.documents, text);
-      persist(result.documents);
-      state.documents = result.documents;
-      renderDocumentList();
-      renderPassages();
-      backupStatus.textContent = `${result.added} toegevoegd, ${result.skipped} overgeslagen.`;
+      await persist(result.documents, () => {
+        state.documents = result.documents;
+        renderDocumentList();
+        renderPassages();
+        backupStatus.textContent = `${result.added} toegevoegd, ${result.skipped} overgeslagen.`;
+      });
     } catch (error) {
       backupError.textContent = error.message;
     } finally {
@@ -430,7 +449,7 @@ function attachEvents() {
   });
 
   if (form) {
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
       event.preventDefault();
       document.querySelector('[data-save-status]').textContent = '';
 
@@ -452,19 +471,20 @@ function attachEvents() {
         const quote = createQuote(documentState, documentState.content);
         const documents = state.documents.filter((doc) => doc.documentId !== documentState.documentId);
         documents.push(documentState);
-        persist(documents);
-        state.documents = documents;
-        renderPassages();
-        state.currentDocument = documentState;
-        state.quotes = [quote];
-        const errorBox = document.querySelector('[data-error-box]');
-        if (errorBox) errorBox.textContent = '';
-        renderQuoteList();
-        updateFormState(documentState);
-        renderDocumentList();
-        document.querySelector('[data-file-status]').textContent = '';
-        document.querySelector('[data-file-error]').textContent = '';
-        document.querySelector('[data-save-status]').textContent = 'Document lokaal opgeslagen.';
+        await persist(documents, () => {
+          state.documents = documents;
+          renderPassages();
+          state.currentDocument = documentState;
+          state.quotes = [quote];
+          const errorBox = document.querySelector('[data-error-box]');
+          if (errorBox) errorBox.textContent = '';
+          renderQuoteList();
+          updateFormState(documentState);
+          renderDocumentList();
+          document.querySelector('[data-file-status]').textContent = '';
+          document.querySelector('[data-file-error]').textContent = '';
+          document.querySelector('[data-save-status]').textContent = 'Document lokaal opgeslagen.';
+        });
       } catch (error) {
         const errorBox = document.querySelector('[data-error-box]');
         if (errorBox) {
@@ -474,38 +494,40 @@ function attachEvents() {
     });
   }
 
-  document.querySelector('#delete-document').addEventListener('click', () => {
+  document.querySelector('#delete-document').addEventListener('click', async () => {
     if (!state.currentDocument || !confirmDiscard()) return;
     document.querySelector('[data-save-status]').textContent = '';
     try {
       const deleted = { document: state.currentDocument, index: state.documents.findIndex((doc) => doc.documentId === state.currentDocument.documentId) };
       const documents = state.documents.filter((doc) => doc.documentId !== state.currentDocument.documentId);
-      persist(documents);
-      state.documents = documents;
-      lastDeleted = deleted;
-      document.querySelector('#undo-delete').hidden = false;
-      document.querySelector('[data-undo-status]').textContent = `“${deleted.document.title}” verwijderd. Terugzetten kan tot de volgende verwijdering of herladen.`;
-      renderPassages();
-      resetEditor();
-      document.querySelector('[data-save-status]').textContent = 'Document verwijderd.';
+      await persist(documents, () => {
+        state.documents = documents;
+        lastDeleted = deleted;
+        document.querySelector('#undo-delete').hidden = false;
+        document.querySelector('[data-undo-status]').textContent = `“${deleted.document.title}” verwijderd. Terugzetten kan tot de volgende verwijdering of herladen.`;
+        renderPassages();
+        resetEditor();
+        document.querySelector('[data-save-status]').textContent = 'Document verwijderd.';
+      });
     } catch (error) {
       showError(error);
     }
   });
 
-  document.querySelector('#undo-delete').addEventListener('click', () => {
+  document.querySelector('#undo-delete').addEventListener('click', async () => {
     if (!lastDeleted) return;
     document.querySelector('[data-save-status]').textContent = '';
     try {
       const documents = restoreDocument(state.documents, lastDeleted.document, lastDeleted.index);
-      persist(documents);
-      state.documents = documents;
-      lastDeleted = null;
-      document.querySelector('#undo-delete').hidden = true;
-      document.querySelector('[data-undo-status]').textContent = 'Document teruggezet. Je huidige invoer is behouden.';
-      renderDocumentList();
-      renderPassages();
-      showError();
+      await persist(documents, () => {
+        state.documents = documents;
+        lastDeleted = null;
+        document.querySelector('#undo-delete').hidden = true;
+        document.querySelector('[data-undo-status]').textContent = 'Document teruggezet. Je huidige invoer is behouden.';
+        renderDocumentList();
+        renderPassages();
+        showError();
+      });
     } catch (error) {
       showError(error);
     }

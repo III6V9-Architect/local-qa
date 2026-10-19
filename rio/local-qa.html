@@ -7,11 +7,14 @@
     <link rel="stylesheet" href="./local-qa.css" />
   </head>
   <body>
-    <main class="app-shell">
+    <main>
+      <fieldset id="app-controls" class="app-shell">
+        <legend class="sr-only">Documenten en vragen</legend>
       <section class="panel">
         <h1>Document invoer</h1>
         <p>Documenten worden in deze browser bewaard, ook na herladen. Verwijder ze via de documentenlijst. Er wordt niets verstuurd.</p>
         <p class="error" data-storage-error role="alert"></p>
+        <p data-write-status role="status"></p>
 
         <label>Nieuw document uit tekstbestand (.txt, .md, maximaal 1 MB)
           <input id="open-text-file" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" />
@@ -123,6 +126,7 @@
         <p data-passage-export-status role="status"></p>
         <ol data-passage-list class="quote-list"></ol>
       </section>
+      </fieldset>
     </main>
 
     <script type="module" src="./local-qa-ui.mjs"></script>

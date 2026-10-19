@@ -143,3 +143,18 @@ discarded. Storage failures are visible and do not block normal document editing
 Session storage is temporary and normally ends with the tab; use document save
 and JSON backups for durable storage. Browser tab duplication may copy session
 storage initially, after which each tab has its own draft.
+
+## Concurrent saves
+
+Document save, JSON import, deletion, and undo acquire the same exclusive Web
+Lock before checking the stored snapshot and writing. If another tab holds the
+lock, the action fails visibly and can be retried; if its save changed storage,
+reload before retrying and use draft recovery. The editor is temporarily disabled
+until storage and the matching UI state transition finish. Failed writes keep
+input and recovery available.
+
+Writes require Web Locks on localhost or HTTPS. If unavailable, the app reports
+that saving is unsupported instead of using an unlocked write. Already saved
+content remains readable and exportable. Locks coordinate tabs running this
+version of the app; older versions or external scripts that directly change
+localStorage do not participate in that lock.
