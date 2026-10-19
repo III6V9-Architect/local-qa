@@ -895,3 +895,48 @@ test('refresh rejects corrupt storage, retries after repair and handles clear', 
   await expect(page.locator('#content')).toHaveValue('');
   await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(0);
 });
+
+test('stale backup export is blocked until refresh, preserving unsaved input', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await page.fill('#content', 'Nog niet opgeslagen concept');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await uploadBackup(other, { version: 1, documents: [backupDoc('extra', 'Nieuwe bron')] });
+  await expect(other.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  const downloads = [];
+  page.on('download', (download) => downloads.push(download));
+  await page.click('#export-documents');
+  await expect(page.locator('[data-backup-error]')).toContainText('Back-up niet gemaakt');
+  await expect(page.locator('[data-backup-status]')).toBeEmpty();
+  expect(downloads).toHaveLength(0);
+  await expect(page.locator('#content')).toHaveValue('Nog niet opgeslagen concept');
+  await page.click('#refresh-documents');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  const download = page.waitForEvent('download');
+  await page.click('#export-documents');
+  const backup = JSON.parse(await readFile(await (await download).path(), 'utf8'));
+  expect(backup.documents.map((doc) => doc.title)).toEqual(['Document', 'Nieuwe bron']);
+  expect(backup.documents[0].content).toBe('Eerste inhoud');
+  await expect(page.locator('#content')).toHaveValue('Nog niet opgeslagen concept');
+  await expect(page.locator('[data-backup-error]')).toBeEmpty();
+});
+
+test('export detects corrupt storage even without a storage event', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await page.evaluate(() => localStorage.setItem('local-qa.documents.v1', '{broken'));
+  await expect(page.locator('#refresh-documents')).toBeHidden();
+  const downloads = [];
+  page.on('download', (download) => downloads.push(download));
+  await page.click('#export-documents');
+  await expect(page.locator('[data-backup-error]')).toContainText('Back-up niet gemaakt');
+  await expect(page.locator('#refresh-documents')).toBeVisible();
+  expect(downloads).toHaveLength(0);
+  expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBe('{broken');
+  await expect(page.locator('#content')).toHaveValue('Eerste inhoud');
+});
