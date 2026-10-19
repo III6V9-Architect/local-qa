@@ -15,8 +15,17 @@ Open http://127.0.0.1:4173/rio/local-qa.html.
 Title and document content must contain non-whitespace text. Origin is optional;
 blank origin becomes `ONBEKEND`. Status is `draft`, `historisch`, or
 `specificatie`. Every quote carries the user-supplied, unverified disclaimer.
-Saving replaces the current quote. Reset clears the form, quote, and errors.
-Documents live only in memory and disappear on reload.
+Saving updates the selected document; Nieuw / Reset starts a new document and clears
+only the form, quote, and errors. Select a title to reopen it, or use the delete
+button to remove the selected document. Documents persist in localStorage in this
+browser for the same site address; nothing is sent to a server. They are not
+synced or backed up, and clearing browser site data removes them.
+
+Storage failures do not replace the current saved document or claim success.
+Malformed/unsupported stored data is preserved and blocks writes until repaired.
+If another tab changes storage, reload before saving to avoid overwriting it.
+Reload discards unsaved form edits. Stored verification flags are never trusted;
+loaded documents remain user-supplied and unverified.
 
 ## Tests
 
