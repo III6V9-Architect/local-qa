@@ -10,6 +10,8 @@
     <main class="app-shell">
       <section class="panel">
         <h1>Document invoer</h1>
+        <p>Documenten worden in deze browser bewaard, ook na herladen. Verwijder ze via de documentenlijst. Er wordt niets verstuurd.</p>
+        <p class="error" data-storage-error role="alert"></p>
 
         <form id="document-form" novalidate>
           <label>
@@ -38,14 +40,19 @@
 
           <div class="actions">
             <button type="submit">Document opslaan</button>
-            <button type="button" id="reset-document" class="secondary">Reset</button>
+            <button type="button" id="reset-document" class="secondary">Nieuw / Reset</button>
           </div>
         </form>
 
         <p class="error" data-error-box aria-live="polite"></p>
+        <p data-save-status role="status"></p>
       </section>
 
       <section class="panel">
+        <h2>Mijn documenten</h2>
+        <p data-library-empty>Nog geen opgeslagen documenten.</p>
+        <ul data-document-list class="document-list" aria-label="Opgeslagen documenten"></ul>
+        <button type="button" id="delete-document" class="secondary" disabled>Geselecteerd document verwijderen</button>
         <h2>Citaat</h2>
         <ul data-quote-list class="quote-list"></ul>
       </section>

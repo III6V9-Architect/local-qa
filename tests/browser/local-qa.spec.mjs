@@ -99,3 +99,71 @@ test('reset clears fields, quote and error, then permits a fresh save', async ({
   await expect(page.locator('.quote-meta')).toHaveText('Nieuwe bron · draft');
 });
 
+
+test('multiple documents survive reload, support edits and persistent deletion', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Inhoud A');
+  await page.fill('#title', 'Document A');
+  await page.selectOption('#status', 'historisch');
+  await page.click('button[type="submit"]');
+  await page.click('#reset-document');
+  await fillDocument(page, 'Inhoud B');
+  await page.fill('#title', 'Document B');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await page.reload();
+  await page.getByRole('button', { name: 'Document A', exact: true }).click();
+  await expect(page.locator('#status')).toHaveValue('historisch');
+  await expect(page.locator('blockquote')).toHaveText('Inhoud A');
+  await expect(page.locator('.quote-disclaimer')).toHaveText('gebruikersopgave — niet geverifieerd');
+  await page.fill('#content', 'A gewijzigd');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await page.reload();
+  await page.getByRole('button', { name: 'Document A', exact: true }).click();
+  await expect(page.locator('blockquote')).toHaveText('A gewijzigd');
+  await page.click('#delete-document');
+  await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Document B', exact: true }).click();
+  await expect(page.locator('blockquote')).toHaveText('Inhoud B');
+});
+
+test('corrupt storage is preserved and blocks saving', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.evaluate(() => localStorage.setItem('local-qa.documents.v1', '{broken'));
+  await page.reload();
+  await expect(page.locator('[data-storage-error]')).toContainText('beschadigd');
+  await fillDocument(page);
+  await page.click('button[type="submit"]');
+  await expect(page.locator('[data-error-box]')).toContainText('beschadigd');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBe('{broken');
+});
+
+test('quota failure preserves the previous quote and editable input', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.click('button[type="submit"]');
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
+  await page.fill('#content', 'Niet opgeslagen');
+  await page.click('button[type="submit"]');
+  await expect(page.locator('[data-error-box]')).toContainText('Niet opgeslagen');
+  await expect(page.locator('blockquote')).toHaveText('Eerste inhoud');
+  await expect(page.locator('#content')).toHaveValue('Niet opgeslagen');
+  await expect(page.locator('[data-save-status]')).toBeEmpty();
+});
+
+test('another tab cannot silently overwrite newer documents', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.click('button[type="submit"]');
+  await fillDocument(other, 'Ander tabblad');
+  await other.click('button[type="submit"]');
+  await expect(other.locator('[data-error-box]')).toContainText('ander tabblad');
+  await other.reload();
+  await expect(other.locator('[data-document-list] button')).toHaveCount(1);
+});

@@ -145,3 +145,11 @@ blockquote {
     grid-template-columns: 1fr;
   }
 }
+
+
+.document-list { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem; }
+.document-list button { background: var(--panel-soft); color: var(--text); border: 1px solid #475569; }
+.document-list button[aria-pressed="true"] { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#delete-document { margin-bottom: 1.5rem; }

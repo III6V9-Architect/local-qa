@@ -4,11 +4,54 @@ import {
   createDocument,
   createQuote,
 } from './local-qa.mjs';
+import { createDocumentStore } from './document-store.mjs';
 
 const state = {
+  documents: [],
   currentDocument: null,
   quotes: [],
 };
+
+let store;
+let storageError = '';
+
+function showError(error = '') {
+  document.querySelector('[data-error-box]').textContent = error instanceof Error ? error.message : error;
+}
+
+function renderDocumentList() {
+  const list = document.querySelector('[data-document-list]');
+  list.replaceChildren();
+  for (const doc of state.documents) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = doc.title;
+    button.setAttribute('aria-pressed', String(doc.documentId === state.currentDocument?.documentId));
+    button.addEventListener('click', () => {
+      document.querySelector('[data-save-status]').textContent = '';
+      state.currentDocument = doc;
+      state.quotes = [createQuote(doc, doc.content)];
+      updateFormState(doc);
+      renderQuoteList();
+      renderDocumentList();
+      showError();
+    });
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+  document.querySelector('[data-library-empty]').hidden = state.documents.length > 0;
+  document.querySelector('#delete-document').disabled = !state.currentDocument;
+}
+
+function persist(documents) {
+  if (storageError) throw new Error(storageError);
+  try {
+    store.save(documents);
+  } catch (error) {
+    throw new Error(`Niet opgeslagen. ${error.message}`);
+  }
+}
 
 function renderQuoteList() {
   const list = document.querySelector('[data-quote-list]');
@@ -52,6 +95,8 @@ function updateFormState(documentState) {
   const statusField = document.querySelector('#status');
   if (!originField || !statusField) return;
 
+  document.querySelector('#title').value = documentState?.title ?? '';
+  document.querySelector('#content').value = documentState?.content ?? '';
   originField.value = documentState?.source?.origin ?? '';
   statusField.value = documentState?.source?.status ?? 'draft';
 }
@@ -63,6 +108,7 @@ function attachEvents() {
   if (form) {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      document.querySelector('[data-save-status]').textContent = '';
 
       const formData = new FormData(form);
       const title = formData.get('title') ?? '';
@@ -72,7 +118,7 @@ function attachEvents() {
 
       try {
         const documentState = createDocument({
-          documentId: `doc-${Date.now()}`,
+          documentId: state.currentDocument?.documentId ?? crypto.randomUUID(),
           title,
           content,
           origin,
@@ -80,12 +126,18 @@ function attachEvents() {
         });
 
         const quote = createQuote(documentState, documentState.content);
+        const documents = state.documents.filter((doc) => doc.documentId !== documentState.documentId);
+        documents.push(documentState);
+        persist(documents);
+        state.documents = documents;
         state.currentDocument = documentState;
         state.quotes = [quote];
         const errorBox = document.querySelector('[data-error-box]');
         if (errorBox) errorBox.textContent = '';
         renderQuoteList();
         updateFormState(documentState);
+        renderDocumentList();
+        document.querySelector('[data-save-status]').textContent = 'Document lokaal opgeslagen.';
       } catch (error) {
         const errorBox = document.querySelector('[data-error-box]');
         if (errorBox) {
@@ -95,6 +147,19 @@ function attachEvents() {
     });
   }
 
+  document.querySelector('#delete-document').addEventListener('click', () => {
+    if (!state.currentDocument) return;
+    try {
+      const documents = state.documents.filter((doc) => doc.documentId !== state.currentDocument.documentId);
+      persist(documents);
+      state.documents = documents;
+      resetButton.click();
+      document.querySelector('[data-save-status]').textContent = 'Document verwijderd.';
+    } catch (error) {
+      showError(error);
+    }
+  });
+
   if (resetButton) {
     resetButton.addEventListener('click', () => {
       const form = document.querySelector('#document-form');
@@ -103,6 +168,8 @@ function attachEvents() {
       state.quotes = [];
       renderQuoteList();
       updateFormState(null);
+      renderDocumentList();
+      document.querySelector('[data-save-status]').textContent = '';
 
       const errorBox = document.querySelector('[data-error-box]');
       if (errorBox) {
@@ -113,7 +180,15 @@ function attachEvents() {
 }
 
 if (typeof document !== 'undefined') {
+  try {
+    store = createDocumentStore(window.localStorage);
+    state.documents = store.load();
+  } catch {
+    storageError = 'Lokale opslag is niet beschikbaar of beschadigd. Bestaande gegevens zijn niet gewijzigd. Herstel de opslag en herlaad de pagina.';
+    document.querySelector('[data-storage-error]').textContent = storageError;
+  }
   attachEvents();
+  renderDocumentList();
   renderQuoteList();
   updateFormState(null);
 }
