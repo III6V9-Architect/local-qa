@@ -173,6 +173,7 @@ test('another tab cannot silently overwrite newer documents', async ({ page, con
 });
 
 async function uploadBackup(page, data) {
+  await expect(page.locator('#import-documents')).toBeEnabled();
   await page.locator('#import-documents').setInputFiles({
     name: 'backup.json', mimeType: 'application/json',
     buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data)),
@@ -418,6 +419,7 @@ test('undo rejects changes from another tab and unload guard only protects dirty
 });
 
 async function openTextFile(page, name, content) {
+  await expect(page.locator('#open-text-file')).toBeEnabled();
   await page.locator('#open-text-file').setInputFiles({
     name, mimeType: 'text/plain', buffer: Buffer.isBuffer(content) ? content : Buffer.from(content),
   });
