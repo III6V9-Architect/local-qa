@@ -13,6 +13,13 @@
         <p>Documenten worden in deze browser bewaard, ook na herladen. Verwijder ze via de documentenlijst. Er wordt niets verstuurd.</p>
         <p class="error" data-storage-error role="alert"></p>
 
+        <label>Nieuw document uit tekstbestand (.txt, .md, maximaal 1 MB)
+          <input id="open-text-file" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" />
+        </label>
+        <p>Het bestand wordt lokaal gelezen als UTF-8. Controleer de tekst en herkomst voordat je opslaat. Markdown blijft gewone tekst.</p>
+        <p data-file-status role="status"></p>
+        <p data-file-error class="error" role="alert"></p>
+
         <form id="document-form" novalidate>
           <label>
             Titel

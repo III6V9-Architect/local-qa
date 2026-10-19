@@ -409,3 +409,97 @@ test('undo rejects changes from another tab and unload guard only protects dirty
   await other.reload();
   await expect(other.locator('[data-document-list] button')).toHaveCount(1);
 });
+
+async function openTextFile(page, name, content) {
+  await page.locator('#open-text-file').setInputFiles({
+    name, mimeType: 'text/plain', buffer: Buffer.isBuffer(content) ? content : Buffer.from(content),
+  });
+}
+
+test('text file opens as a new unsaved document and becomes searchable only after save', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Oude inhoud');
+  await page.locator('#document-form button[type="submit"]').click();
+  await openTextFile(page, 'Water.md', '# Rapport\n\nWaterkwaliteit is gemeten.');
+  await expect(page.locator('[data-file-status]')).toContainText('geopend als nieuw document');
+  await expect(page.locator('#title')).toHaveValue('Water');
+  await expect(page.locator('#origin')).toHaveValue('Water.md');
+  await expect(page.locator('#status')).toHaveValue('draft');
+  await expect(page.locator('[data-dirty-status]')).toContainText('Niet-opgeslagen');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  await page.fill('#question', 'waterkwaliteit');
+  await page.getByRole('button', { name: 'Zoek passages' }).click();
+  await expect(page.locator('[data-testid="passage-card"]')).toHaveCount(0);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await expect(page.locator('[data-testid="passage-card"]')).toContainText('Water.md · draft');
+  await expect(page.locator('[data-dirty-status]')).toBeEmpty();
+  await page.reload();
+  await page.getByRole('button', { name: 'Document', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('Oude inhoud');
+  await page.getByRole('button', { name: 'Water', exact: true }).click();
+  await expect(page.locator('#content')).toHaveValue('# Rapport\n\nWaterkwaliteit is gemeten.');
+});
+
+test('opening a file can be cancelled and retried without losing draft text', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Mijn concept');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await openTextFile(page, 'nieuw.txt', 'Nieuwe tekst');
+  await expect(page.locator('[data-file-status]')).toContainText('geannuleerd');
+  await expect(page.locator('#content')).toHaveValue('Mijn concept');
+  page.once('dialog', (dialog) => dialog.accept());
+  await openTextFile(page, 'nieuw.txt', 'Nieuwe tekst');
+  await expect(page.locator('#content')).toHaveValue('Nieuwe tekst');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+});
+
+test('invalid files and read failures preserve the editor and collection', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page, 'Behoud deze tekst');
+  await page.locator('#document-form button[type="submit"]').click();
+  for (const [name, content, message] of [
+    ['test.pdf', 'PDF', 'niet ondersteund'],
+    ['test.txt', Buffer.from([0xc3, 0x28]), 'UTF-8'],
+    ['test.txt', 'a\0b', 'binaire'],
+    ['test.txt', '   ', 'Documentinhoud'],
+    ['test.txt', Buffer.alloc(1024 * 1024 + 1, 65), 'te groot'],
+  ]) {
+    await openTextFile(page, name, content);
+    await expect(page.locator('[data-file-error]')).toContainText(message);
+    await expect(page.locator('#content')).toHaveValue('Behoud deze tekst');
+    await expect(page.locator('[data-document-list] button')).toHaveCount(1);
+  }
+  await page.evaluate(() => { File.prototype.arrayBuffer = async () => { throw new Error('Leesfout'); }; });
+  await openTextFile(page, 'test.txt', 'tekst');
+  await expect(page.locator('[data-file-error]')).toContainText('Leesfout');
+  await expect(page.locator('#open-text-file')).toBeEnabled();
+  await expect(page.locator('#content')).toHaveValue('Behoud deze tekst');
+});
+
+test('Markdown markup is displayed as text after save', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  const content = '# Titel\n\n<img src=x onerror="window.injected=true">';
+  await openTextFile(page, 'tekst.md', content);
+  await expect(page.locator('#content')).toHaveValue(content);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-testid="quote-card"] blockquote')).toHaveText(content);
+  await expect(page.locator('[data-testid="quote-card"] img')).toHaveCount(0);
+});
+
+test('edits made while a file is being read still require discard confirmation', async ({ page }) => {
+  await page.goto('/rio/local-qa.html');
+  await page.evaluate(() => {
+    const original = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function () {
+      return new Promise((resolve) => { window.finishFileRead = async () => resolve(await original.call(this)); });
+    };
+  });
+  await openTextFile(page, 'later.txt', 'Bestandstekst');
+  await expect(page.locator('#open-text-file')).toBeDisabled();
+  await page.fill('#content', 'Getypt tijdens lezen');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.evaluate(() => window.finishFileRead());
+  await expect(page.locator('[data-file-status]')).toContainText('geannuleerd');
+  await expect(page.locator('#content')).toHaveValue('Getypt tijdens lezen');
+});
