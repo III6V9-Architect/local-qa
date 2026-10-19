@@ -9,7 +9,7 @@ import { formatCitation, formatPassageReport } from './citation-export.mjs';
 import { createDraftStore, recoverDraft } from './draft-store.mjs';
 import { searchPassages, highlightParts } from './passage-search.mjs';
 import { writeDocuments } from './document-write.mjs';
-import { createDocumentStore } from './document-store.mjs';
+import { createDocumentStore, STORAGE_KEY } from './document-store.mjs';
 import { filterDocuments, exportDocuments, importDocuments, restoreDocument, MAX_IMPORT_BYTES } from './document-library.mjs';
 
 const state = {
@@ -321,7 +321,50 @@ function updateFormState(documentState, markSaved = true) {
   updateDirtyState();
 }
 
+function refreshDocuments() {
+  if (writePending) return;
+  const message = document.querySelector('[data-sync-status]');
+  try {
+    // Load into a separate store so invalid external data cannot invalidate our view.
+    const refreshedStore = createDocumentStore(window.localStorage);
+    const documents = refreshedStore.load();
+    const dirty = hasUnsavedChanges();
+    const fields = Object.fromEntries(['title', 'content', 'origin', 'status'].map((id) => [id, document.getElementById(id).value]));
+    const recovered = dirty ? recoverDraft({ version: 1, base: state.currentDocument, fields }, documents) : null;
+    const selected = recovered ? recovered.document
+      : documents.find((doc) => doc.documentId === state.currentDocument?.documentId) ?? null;
+    store = refreshedStore;
+    state.documents = documents;
+    state.currentDocument = selected;
+    state.quotes = selected ? [createQuote(selected, selected.content)] : [];
+    suspendDraftWrites = true;
+    updateFormState(selected);
+    if (recovered) updateFormState({ ...fields, source: fields }, false);
+    suspendDraftWrites = false;
+    updateDirtyState();
+    storageError = '';
+    document.querySelector('[data-storage-error]').textContent = '';
+    document.querySelector('[data-save-status]').textContent = '';
+    showError();
+    renderQuoteList();
+    renderDocumentList();
+    renderPassages();
+    document.querySelector('#refresh-documents').hidden = true;
+    message.textContent = recovered?.conflict
+      ? 'Documenten bijgewerkt. Je concept blijft behouden als nieuw document omdat de bron is gewijzigd of verwijderd.'
+      : 'Documenten bijgewerkt. Eventuele niet-opgeslagen invoer is behouden.';
+  } catch {
+    message.textContent = 'Bijwerken mislukt: lokale opslag is niet beschikbaar of beschadigd. Je huidige documenten en invoer zijn behouden. Herstel de opslag en probeer opnieuw.';
+  }
+}
+
 function attachEvents() {
+  document.querySelector('#refresh-documents').addEventListener('click', refreshDocuments);
+  window.addEventListener('storage', (event) => {
+    if (event.storageArea !== window.localStorage || (event.key !== STORAGE_KEY && event.key !== null)) return;
+    document.querySelector('[data-sync-status]').textContent = 'Documenten zijn in een ander tabblad gewijzigd. Werk de lijst bij; je invoer blijft behouden.';
+    document.querySelector('#refresh-documents').hidden = false;
+  });
   document.querySelector('#restore-draft').addEventListener('click', () => {
     if (!pendingDraft || !confirmDiscard()) return;
     const recovered = recoverDraft(pendingDraft, state.documents);

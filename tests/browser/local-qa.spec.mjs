@@ -831,3 +831,67 @@ test('missing Web Locks fails safely without losing editor input', async ({ page
   await expect(page.locator('[data-save-status]')).toBeEmpty();
   expect(await page.evaluate(() => localStorage.getItem('local-qa.documents.v1'))).toBeNull();
 });
+
+test('refresh preserves a conflicting draft as a new document and updates citations', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await uploadBackup(page, { version: 1, documents: [backupDoc('a', 'Bron')] });
+  await expect(page.locator('[data-backup-status]')).toContainText('1 toegevoegd');
+  await page.getByRole('button', { name: 'Bron', exact: true }).click();
+  await page.fill('#content', 'Mijn lokale concept');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await other.getByRole('button', { name: 'Bron', exact: true }).click();
+  await other.fill('#content', 'Nieuwere broninhoud');
+  await other.locator('#document-form button[type="submit"]').click();
+  await expect(other.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await expect(page.locator('#refresh-documents')).toBeVisible();
+  await page.click('#refresh-documents');
+  await expect(page.locator('[data-sync-status]')).toContainText('als nieuw document');
+  await expect(page.locator('#content')).toHaveValue('Mijn lokale concept');
+  await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(0);
+  await page.fill('#title', 'Mijn kopie');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Bron', exact: true }).click();
+  await expect(page.locator('blockquote')).toHaveText('Nieuwere broninhoud');
+});
+
+test('refresh keeps an unchanged source attached to its draft', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await page.fill('#content', 'Lokale bewerking');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  await uploadBackup(other, { version: 1, documents: [backupDoc('other', 'Ander')] });
+  await expect(page.locator('#refresh-documents')).toBeVisible();
+  await page.click('#refresh-documents');
+  await expect(page.locator('#content')).toHaveValue('Lokale bewerking');
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(2);
+  await expect(page.locator('blockquote')).toHaveText('Lokale bewerking');
+});
+
+test('refresh rejects corrupt storage, retries after repair and handles clear', async ({ page, context }) => {
+  await page.goto('/rio/local-qa.html');
+  await fillDocument(page);
+  await page.locator('#document-form button[type="submit"]').click();
+  await expect(page.locator('[data-save-status]')).toHaveText('Document lokaal opgeslagen.');
+  const other = await context.newPage();
+  await other.goto('/rio/local-qa.html');
+  const saved = await other.evaluate(() => localStorage.getItem('local-qa.documents.v1'));
+  await other.evaluate(() => localStorage.setItem('local-qa.documents.v1', '{broken'));
+  await page.click('#refresh-documents');
+  await expect(page.locator('[data-sync-status]')).toContainText('Bijwerken mislukt');
+  await expect(page.locator('blockquote')).toHaveText('Eerste inhoud');
+  await other.evaluate((raw) => localStorage.setItem('local-qa.documents.v1', raw), saved);
+  await page.click('#refresh-documents');
+  await expect(page.locator('[data-sync-status]')).toContainText('Documenten bijgewerkt');
+  await other.evaluate(() => localStorage.clear());
+  await page.click('#refresh-documents');
+  await expect(page.locator('[data-document-list] button')).toHaveCount(0);
+  await expect(page.locator('#content')).toHaveValue('');
+  await expect(page.locator('[data-testid="quote-card"]')).toHaveCount(0);
+});

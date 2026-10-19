@@ -158,3 +158,7 @@ that saving is unsupported instead of using an unlocked write. Already saved
 content remains readable and exportable. Locks coordinate tabs running this
 version of the app; older versions or external scripts that directly change
 localStorage do not participate in that lock.
+
+### Changes from another tab
+
+A storage-change notice offers **Documenten bijwerken** without reloading the page. Refresh validates the latest collection, updates search results and citations, and preserves unsaved editor fields. An unchanged source remains editable; a changed or deleted source detaches the draft into a new document so saving cannot overwrite the newer source. A clean selected document follows its latest version or clears if deleted. Invalid external storage leaves the current view intact and permits retry after repair. Pending draft recovery and delete undo remain available.
